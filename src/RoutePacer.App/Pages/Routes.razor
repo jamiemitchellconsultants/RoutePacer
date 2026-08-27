@@ -1,8 +1,10 @@
 @page "/routes"
 @inject IRouteRepository Repository
+@inject RouteCatalogService Catalog
 
 <PageTitle>Routes</PageTitle>
 <h1>Your routes</h1>
+
 @if (routes is null)
 {
     <p role="status">Loading routes…</p>
@@ -16,8 +18,45 @@ else
     <div class="route-list">
         @foreach (var route in routes)
         {
-            <RouteSummaryCard Route="route" />
+            <RouteSummaryCard Route="route" Busy="@busy" OnDelete="Ask" />
+            @if (pending?.RouteId == route.RouteId)
+            {
+                <div class="confirm" role="alert">
+                    <p>Delete “@route.Name”? This cannot be undone.</p>
+                    <button class="btn btn-danger" @onclick="() => Confirm(route)" disabled="@busy">Delete route</button>
+                    <button class="btn" @onclick="() => pending = null" disabled="@busy">Cancel</button>
+                </div>
+            }
         }
     </div>
 }
-@code { private IReadOnlyList<RouteSummary>? routes; protected override async Task OnInitializedAsync() => routes = await Repository.ListAsync(); }
+@if (!string.IsNullOrWhiteSpace(error)) { <p class="alert alert-danger" role="alert">@error</p> }
+
+@code {
+    private IReadOnlyList<RouteSummary>? routes;
+    private RouteSummary? pending;
+    private string? error;
+    private bool busy;
+
+    protected override async Task OnInitializedAsync() => routes = await Repository.ListAsync();
+
+    private void Ask(RouteSummary route) { error = null; pending = route; }
+
+    // The card is only removed once the repository has confirmed the delete.
+    private async Task Confirm(RouteSummary route)
+    {
+        if (busy) return;
+        busy = true; error = null;
+        try
+        {
+            if (await Catalog.TryDeleteAsync(route.RouteId))
+            {
+                pending = null;
+                routes = await Repository.ListAsync();
+            }
+            else error = $"“{route.Name}” still has rides. Delete those rides first.";
+        }
+        catch (Exception) { error = "Could not delete that route. Try again."; }
+        finally { busy = false; }
+    }
+}
