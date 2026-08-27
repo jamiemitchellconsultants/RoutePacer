@@ -4,9 +4,10 @@
 @inject NavigationManager Navigation
 
 <PageTitle>Track ride</PageTitle>
-@if (Session.Snapshot is null)
+@if (!Session.Active || Session.Snapshot is null)
 {
     <h1>Ready to ride</h1>
+    @if (Session.Snapshot?.Error is { } previous) { <p role="alert">@previous</p> }
     <button class="btn btn-primary" @onclick="Start">Start ride</button>
 }
 else

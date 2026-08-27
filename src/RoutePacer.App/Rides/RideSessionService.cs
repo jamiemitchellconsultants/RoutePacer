@@ -9,10 +9,13 @@ public sealed class RideSessionService(IRouteRepository routes, IRideRepository 
 {
     private readonly GpsSpikeFilter filter = new(); private RouteTrack? route; private RideSummary? ride; private DateTimeOffset started; private DateTimeOffset? pausedAt; private TimeSpan pausedTotal; private GeoFix? previousFix; private double totalDistance; private int? previousSegment; private long sequence; private string? statusMessage;
     public RideSessionState State { get; private set; } = RideSessionState.Idle; public TrackerSnapshot? Snapshot { get; private set; }
+    /// <summary>A finished or faulted session is not active, so the rider can start another ride without reloading.</summary>
+    public bool Active => State is RideSessionState.Starting or RideSessionState.Running or RideSessionState.Paused or RideSessionState.Stopping;
     public event Action<TrackerSnapshot>? SnapshotChanged;
     public async Task StartAsync(Guid routeId)
     {
-        if (State is not RideSessionState.Idle) throw new InvalidOperationException("A ride is already active.");
+        if (Active) throw new InvalidOperationException("A ride is already active.");
+        Snapshot = null;
         route = await routes.GetAsync(routeId) ?? throw new InvalidOperationException("Route not found."); State = RideSessionState.Starting; started = clock.GetUtcNow(); pausedTotal = TimeSpan.Zero; pausedAt = null; previousFix = null; totalDistance = 0; sequence = 0; previousSegment = null; statusMessage = null;
         ride = new RideSummary(Guid.NewGuid(), routeId, started, null, RideStatus.Running, 0, 0, 0); await rides.CreateAsync(ride); await wakeLock.AcquireAsync();
         try { await location.StartAsync(OnFixAsync, OnLocationErrorAsync); State = RideSessionState.Running; Publish(null); }

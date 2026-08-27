@@ -9,7 +9,7 @@
 @if (!string.IsNullOrWhiteSpace(error)) { <p class="alert alert-danger" role="alert">@error</p> }
 @if (summary is not null)
 {
-    <section class="route-success" aria-live="polite"><h2>@summary.Name</h2><p>@(summary.TotalDistanceMeters / 1000d):0.0 km · @summary.PointCount points</p><p>@(summary.TotalDurationSeconds.HasValue ? "Timed route" : "Distance-only route")</p><a class="btn btn-primary" href="@($"/track/{summary.RouteId:D}")">Start ride</a> <a href="/routes">View routes</a></section>
+    <section class="route-success" aria-live="polite"><h2>@summary.Name</h2><p>@($"{summary.TotalDistanceMeters / 1000d:0.0} km · {summary.PointCount} points")</p><p>@(summary.TotalDurationSeconds.HasValue ? "Timed route" : "Distance-only route")</p><a class="btn btn-primary" href="@($"/track/{summary.RouteId:D}")">Start ride</a> <a href="/routes">View routes</a></section>
 }
 
 @code {

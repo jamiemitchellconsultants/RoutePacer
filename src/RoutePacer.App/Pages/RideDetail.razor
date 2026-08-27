@@ -1,5 +1,5 @@
 @page "/rides/{RideId:guid}"
 @inject IRideRepository Repository
 <PageTitle>Ride detail</PageTitle>
-@if (ride is null) { <p>Ride not found.</p> } else { <h1>Ride detail</h1><p>Status: @ride.Status</p><p>Distance: @ride.TotalDistanceMeters:0 m · Duration: @ride.DurationSeconds:0 s · Average: @ride.AvgSpeedMps:0.0 m/s</p><p>Accepted GPS points: @points.Count</p>@if (ride.Status == RideStatus.Interrupted) { <p>This ride was interrupted before it was completed.</p> } }
+@if (ride is null) { <p>Ride not found.</p> } else { <h1>Ride detail</h1><p>Status: @ride.Status</p><p>@($"Distance: {ride.TotalDistanceMeters:0} m · Duration: {ride.DurationSeconds:0} s · Average: {ride.AvgSpeedMps:0.0} m/s")</p><p>Accepted GPS points: @points.Count</p>@if (ride.Status == RideStatus.Interrupted) { <p>This ride was interrupted before it was completed.</p> } }
 @code { [Parameter] public Guid RideId { get; set; } private RideSummary? ride; private IReadOnlyList<RidePoint> points = []; protected override async Task OnInitializedAsync() { ride = (await Repository.ListAsync()).SingleOrDefault(x => x.RideId == RideId); if (ride is not null) points = await Repository.GetPointsAsync(RideId); } }
