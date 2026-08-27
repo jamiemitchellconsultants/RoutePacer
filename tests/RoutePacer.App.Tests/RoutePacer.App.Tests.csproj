@@ -22,4 +22,10 @@
     <Using Include="Xunit" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- The shared Contract v1 vector; must stay byte-identical with RouteTimer's copy. -->
+    <Content Include="..\..\docs\contracts\fixtures\route-timer-contract-v1.json"
+             Link="Fixtures\route-timer-contract-v1.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>
