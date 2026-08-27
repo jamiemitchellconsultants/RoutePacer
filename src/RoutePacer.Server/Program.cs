@@ -5,6 +5,7 @@ using RoutePacer.Persistence.Handoffs;
 using RoutePacer.Server.Configuration;
 using RoutePacer.Server.Handoffs;
 using RoutePacer.Server.Health;
+using RoutePacer.Server.Hosting;
 using System.Text.Json;
 using System.Threading.RateLimiting;
 
@@ -39,6 +40,8 @@ builder.Services.AddRateLimiter(options =>
 var app = builder.Build();
 app.UseBlazorFrameworkFiles();
 app.UseStaticFiles();
+app.UseRouting();
+app.UseMiddleware<SensitiveRequestLoggingFilter>();
 app.UseRateLimiter();
 app.MapHealthChecks("/health/live", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions { Predicate = _ => false, ResponseWriter = static (context, _) => context.Response.WriteAsync("Healthy") });
 app.MapHealthChecks("/health/ready", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions { Predicate = check => check.Tags.Contains("ready"), ResponseWriter = static (context, _) => context.Response.WriteAsync("Healthy") });
