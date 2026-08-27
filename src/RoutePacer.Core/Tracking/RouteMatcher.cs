@@ -4,7 +4,12 @@ namespace RoutePacer.Core.Tracking;
 
 public sealed class RouteMatcher(RouteMatcherOptions? options = null)
 {
-    private const double TieToleranceMeters = 3;
+    /// <summary>
+    /// Added to a candidate that lies behind the previous match. It makes the forward leg win wherever the two
+    /// are within this distance of each other, which is what keeps an out-and-back crossing from snapping
+    /// backward, while leaving a clearly closer segment free to win outright.
+    /// </summary>
+    private const double BackwardPenaltyMeters = 3;
     private readonly RouteMatcherOptions _options = options ?? new();
 
     public MatchedPosition? Match(RouteTrack route, GeoFix fix, int? previousSegmentIndex)
@@ -26,7 +31,7 @@ public sealed class RouteMatcher(RouteMatcherOptions? options = null)
 
     private static MatchedPosition? Find(RouteTrack route, GeoFix fix, int first, int last, int? previous)
     {
-        MatchedPosition? best = null; var bestCross = double.PositiveInfinity;
+        MatchedPosition? best = null; var bestScore = double.PositiveInfinity;
         for (var i = first; i <= last; i++)
         {
             var p0 = route.Points[i]; var p1 = route.Points[i + 1];
@@ -38,20 +43,13 @@ public sealed class RouteMatcher(RouteMatcherOptions? options = null)
             var t = Math.Clamp((-(a.X * dx + a.Y * dy)) / lengthSquared, 0, 1);
             var x = a.X + t * dx; var y = a.Y + t * dy;
             var cross = Math.Sqrt(x * x + y * y);
-            if (best is null || cross < bestCross - TieToleranceMeters || (cross <= bestCross + TieToleranceMeters && PrefersCandidate(i, best.SegmentIndex, previous)))
+            var score = cross + (previous is { } from && i < from ? BackwardPenaltyMeters : 0);
+            if (score < bestScore)
+            {
+                bestScore = score;
                 best = new MatchedPosition(i, p0.DistanceFromStartMeters + t * (p1.DistanceFromStartMeters - p0.DistanceFromStartMeters), cross, t);
-            bestCross = Math.Min(bestCross, cross);
+            }
         }
         return best;
-    }
-
-    // Within the tie tolerance the plan prefers the smallest non-negative change in segment index so an
-    // out-and-back crossing does not snap the rider backward onto the returning leg.
-    private static bool PrefersCandidate(int candidate, int current, int? previous)
-    {
-        if (previous is not { } from) return false;
-        int candidateDelta = candidate - from, currentDelta = current - from;
-        if (candidateDelta >= 0 != currentDelta >= 0) return candidateDelta >= 0;
-        return Math.Abs(candidateDelta) < Math.Abs(currentDelta);
     }
 }
