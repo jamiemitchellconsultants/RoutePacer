@@ -25,7 +25,16 @@ builder.Services.AddScoped<UploadCredentialVerifier>();
 builder.Services.AddHostedService<HandoffCleanupService>();
 builder.Services.AddHealthChecks().AddCheck<MigrationsReadyHealthCheck>("database-migrations", tags: ["ready"]);
 builder.Services.AddHostedService<DatabaseMigrationService>();
-builder.Services.AddRateLimiter(options => options.AddPolicy("handoff-upload", _ => RateLimitPartition.GetFixedWindowLimiter("all-uploads", _ => new FixedWindowRateLimiterOptions { PermitLimit = 10, Window = TimeSpan.FromMinutes(1), QueueLimit = 0, QueueProcessingOrder = QueueProcessingOrder.OldestFirst })));
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    // Rate limiting is middleware, so it runs before the endpoint can authenticate. Partitioning on the
+    // credential keeps anonymous traffic out of the relay's window, which one caller could otherwise
+    // exhaust in ten requests and lock RouteTimer out.
+    options.AddPolicy("handoff-upload", context => RateLimitPartition.GetFixedWindowLimiter(
+        context.RequestServices.GetRequiredService<UploadCredentialVerifier>().IsValid(context.Request.Headers.Authorization.ToString()) ? "authenticated-uploads" : "anonymous-uploads",
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = 10, Window = TimeSpan.FromMinutes(1), QueueLimit = 0, QueueProcessingOrder = QueueProcessingOrder.OldestFirst }));
+});
 
 var app = builder.Build();
 app.UseBlazorFrameworkFiles();

@@ -5,7 +5,7 @@ namespace RoutePacer.Core.Import;
 
 public sealed class GpxRouteParser : IRouteFileParser
 {
-    public const int MaximumPoints = 250_000;
+    public const int MaximumPoints = RouteImportLimits.MaximumPoints;
     public bool CanParse(string fileName) => string.Equals(Path.GetExtension(fileName), ".gpx", StringComparison.OrdinalIgnoreCase);
 
     public async Task<IReadOnlyList<RawRoutePoint>> ParseAsync(Stream content, CancellationToken cancellationToken = default)
