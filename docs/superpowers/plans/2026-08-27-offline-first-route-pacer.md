@@ -1385,7 +1385,9 @@ Expected: FAIL because ride workflow types are absent.
 
 - [ ] **Step 3: Implement a conservative GPS spike filter**
 
-Accept the first fix. Reject invalid coordinates, non-increasing timestamps, accuracy over 100 m, and implied speed over 35 m/s when the browser speed is absent or agrees within 10 m/s. Do not smooth accepted coordinates; retain raw fixes for auditability.
+Accept the first fix. Reject invalid coordinates, non-increasing timestamps, accuracy over 100 m, and implied speed over 35 m/s when the browser speed is absent or disagrees with the implied speed by more than 10 m/s. Do not smooth accepted coordinates; retain raw fixes for auditability.
+
+> **Corrected 2026-08-27, after implementation.** This step originally read "when the browser speed is absent **or agrees within 10 m/s**", which rejects a fast fix precisely when the browser corroborates it — so a genuine descent above 35 m/s would be discarded while an uncorroborated jump of the same size was kept. The intent is the opposite: a browser speed that agrees is evidence the movement was real, and only an absent or contradicting speed leaves the jump unexplained. The rule above matches `GpsSpikeFilter` as implemented and is the one to build against.
 
 - [ ] **Step 4: Implement ordered session lifecycle**
 
