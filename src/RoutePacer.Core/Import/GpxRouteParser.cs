@@ -25,9 +25,12 @@ public sealed class GpxRouteParser : IRouteFileParser
                     throw new RouteImportException("invalid-gpx-value", "A GPX coordinate is invalid.");
                 double? ele = null; DateTimeOffset? timestamp = null;
                 using var subtree = reader.ReadSubtree();
-                while (await subtree.ReadAsync().ConfigureAwait(false))
+                await subtree.ReadAsync().ConfigureAwait(false);
+                // ReadElementContentAsStringAsync already advances past the element, so the loop must not
+                // read again after it or the following sibling is skipped.
+                while (!subtree.EOF)
                 {
-                    if (subtree.NodeType != XmlNodeType.Element) continue;
+                    if (subtree.NodeType != XmlNodeType.Element) { await subtree.ReadAsync().ConfigureAwait(false); continue; }
                     if (subtree.LocalName == "ele")
                     {
                         var value = await subtree.ReadElementContentAsStringAsync().ConfigureAwait(false);
@@ -40,6 +43,7 @@ public sealed class GpxRouteParser : IRouteFileParser
                         if (!DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var parsed)) throw new RouteImportException("invalid-gpx-value", "A GPX timestamp is invalid.");
                         timestamp = parsed.ToUniversalTime();
                     }
+                    else await subtree.ReadAsync().ConfigureAwait(false);
                 }
                 result.Add(new RawRoutePoint(lat, lon, ele, null, timestamp));
                 if (result.Count > MaximumPoints) throw new RouteImportException("too-many-points", "The route contains too many points.");

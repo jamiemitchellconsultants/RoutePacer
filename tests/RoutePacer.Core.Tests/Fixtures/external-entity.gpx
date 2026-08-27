@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE gpx [<!ENTITY xxe SYSTEM "file:///etc/passwd">]>
+<gpx version="1.1" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk><trkseg>
+    <trkpt lat="0.0" lon="0.000"/>
+    <trkpt lat="0.0" lon="0.001"/>
+    <trkpt lat="0.0" lon="0.002"/>
+  </trkseg></trk>
+</gpx>
