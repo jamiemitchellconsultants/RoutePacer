@@ -1,0 +1,94 @@
+@page "/open"
+@inject RouteTimerInvocationService Invocations
+@inject NavigationManager Navigation
+@inject RouteCatalogService Catalog
+@inject IJSRuntime Js
+
+<PageTitle>Open shared route</PageTitle>
+<h1>Open shared route</h1>
+
+@if (phase is Phase.Validating)
+{
+    <p role="status">Checking the shared link…</p>
+}
+else if (phase is Phase.Downloading)
+{
+    <p role="status">Downloading the shared route…</p>
+}
+else if (phase is Phase.Importing)
+{
+    <p role="status">Importing the shared route…</p>
+}
+else if (route is not null)
+{
+    <p>Ready: @route.Name — @($"{route.TotalDistanceMeters / 1000d:0.0} km")</p>
+    <a class="btn btn-primary" href="@($"/track/{route.RouteId:D}")">Start ride</a>
+    <a href="/routes">View routes</a>
+}
+else
+{
+    <p class="alert alert-danger" role="alert">Could not import shared route.</p>
+    <p>@error</p>
+    @if (retryable)
+    {
+        <p>The route has not been downloaded yet, so it is safe to try this link again.</p>
+        <button class="btn btn-primary" @onclick="Retry" disabled="@busy">Try again</button>
+    }
+    else
+    {
+        <p>Ask for a new link, or import the GPX file yourself.</p>
+    }
+    <h2>Import a GPX file instead</h2>
+    <InputFile OnChange="ImportManually" accept=".gpx,.fit" disabled="@busy" />
+    @if (!string.IsNullOrWhiteSpace(manualError)) { <p class="alert alert-danger" role="alert">@manualError</p> }
+}
+
+@code {
+    private enum Phase { Validating, Downloading, Importing, Done }
+
+    private Phase phase = Phase.Validating;
+    private RouteSummary? route;
+    private string? error;
+    private string? manualError;
+    private bool retryable, busy;
+    private Uri? invocation;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Captured before the query is cleared, and never rendered or logged.
+        invocation = new Uri(Navigation.Uri);
+        await ImportAsync();
+    }
+
+    private Task Retry() => ImportAsync();
+
+    private async Task ImportAsync()
+    {
+        if (busy || invocation is null) return;
+        busy = true; phase = Phase.Validating; error = null; manualError = null;
+        try
+        {
+            phase = Phase.Downloading;
+            route = await Invocations.ImportAsync(invocation);
+            phase = Phase.Done;
+        }
+        catch (InvocationFailedException ex) { error = ex.Message; retryable = ex.Retryable; phase = Phase.Done; }
+        catch (Exception) { error = "Something went wrong opening this link."; retryable = false; phase = Phase.Done; }
+        finally
+        {
+            busy = false;
+            // Strip the signed query from the address bar and history as soon as the outcome is known.
+            await Js.InvokeVoidAsync("history.replaceState", null, "", "/open");
+        }
+    }
+
+    private async Task ImportManually(InputFileChangeEventArgs args)
+    {
+        if (busy) return;
+        busy = true; manualError = null;
+        try { route = await Catalog.ImportAsync(args.File, null); error = null; }
+        catch (RouteImportException) { manualError = "Could not import that route. Check the file and try again."; }
+        catch (Exception) { manualError = "Could not import that route. Check the file and try again."; }
+        finally { busy = false; }
+    }
+}

@@ -1,0 +1,11 @@
+<article class="ride-card">
+    <h2><a href="@($"/rides/{Ride.RideId:D}")">@Ride.StartedAtUtc.ToLocalTime().ToString("g")</a></h2>
+    <p><span class="badge">@Ride.Status</span> @($"{Ride.TotalDistanceMeters / 1000d:0.00} km · {RideFormat.Elapsed(TimeSpan.FromSeconds(Ride.DurationSeconds))} · {RideFormat.Speed(Ride.AvgSpeedMps)} average")</p>
+    @if (Ride.Status == RideStatus.Interrupted) { <p>This ride was interrupted before it was completed.</p> }
+    <button class="btn" @onclick="() => OnDelete.InvokeAsync(Ride)" disabled="@Busy">Delete</button>
+</article>
+@code {
+    [Parameter, EditorRequired] public RideSummary Ride { get; set; } = default!;
+    [Parameter] public EventCallback<RideSummary> OnDelete { get; set; }
+    [Parameter] public bool Busy { get; set; }
+}

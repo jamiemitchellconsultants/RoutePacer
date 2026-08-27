@@ -1,0 +1,102 @@
+@page "/track/{RouteId:guid}"
+@implements IDisposable
+@inject RideSessionService Session
+@inject IRouteRepository Routes
+@inject NavigationManager Navigation
+
+<PageTitle>Track ride</PageTitle>
+
+@if (!Session.Active || Session.Snapshot is null)
+{
+    <h1>Ready to ride</h1>
+    @if (Session.Snapshot?.Error is { } previous) { <p class="alert alert-warning" role="alert">@previous</p> }
+    @if (route is not null)
+    {
+        <p>@route.Name — @($"{route.TotalDistanceMeters / 1000d:0.0} km")@(route.TotalDurationSeconds.HasValue ? ", timed" : ", distance only")</p>
+    }
+    @if (confirmingStart)
+    {
+        <p role="alert">Starting the ride asks for location access and keeps the screen on. Keep this screen visible while you ride.</p>
+        <button class="btn btn-primary" @onclick="Start" disabled="@busy">Start ride now</button>
+        <button class="btn" @onclick="() => confirmingStart = false" disabled="@busy">Cancel</button>
+    }
+    else
+    {
+        <button class="btn btn-primary" @onclick="() => confirmingStart = true">Start ride</button>
+    }
+}
+else
+{
+    var s = Session.Snapshot;
+    <h1>@s.Route.Name</h1>
+    <section class="tracker" aria-live="polite">
+        @if (s.RouteHasTiming)
+        {
+            <PaceDelta Primary="true" Label="Time" Value="@RideFormat.TimeDelta(s.Pacing?.DeltaTimeSeconds)" Tone="@RideFormat.DeltaTone(s.Pacing?.DeltaTimeSeconds)" />
+        }
+        else
+        {
+            <PaceDelta Primary="true" Label="Time" Value="@RideFormat.TimingUnavailable"
+                       Detail="This route has no timing, so RoutePacer tracks distance only." Tone="neutral" />
+        }
+        <PaceDelta Label="Distance" Value="@RideFormat.Delta(s.Pacing?.DeltaDistanceMeters, "m")" Tone="@RideFormat.DeltaTone(s.Pacing?.DeltaDistanceMeters)" />
+
+        <dl class="tracker-metrics">
+            <dt>Speed</dt><dd>@RideFormat.Speed(s.Pacing?.SpeedMps)</dd>
+            <dt>Elapsed</dt><dd>@RideFormat.Elapsed(s.Elapsed)</dd>
+            <dt>GPS accuracy</dt><dd>@RideFormat.Accuracy(s.AccuracyMeters)</dd>
+            <dt>Line</dt><dd>@RideFormat.CrossTrack(s.Pacing?.Match.CrossTrackErrorMeters)</dd>
+            <dt>Progress</dt><dd>@RideFormat.Progress(s.DistanceMeters, s.Route.TotalDistanceMeters)</dd>
+            <dt>Saved</dt><dd>@RideFormat.Saved(s.SavedPointCount)</dd>
+            <dt>Screen</dt><dd>@RideFormat.Wake(s.WakeStatus)</dd>
+        </dl>
+
+        @if (s.Error is { } message) { <p class="alert alert-warning" role="alert">@message</p> }
+
+        <button class="btn" @onclick="TogglePause" disabled="@(busy || Transitioning)">@(s.State == RideSessionState.Paused ? "Resume" : "Pause")</button>
+        @if (confirmingStop)
+        {
+            <p role="alert">Stop and save this ride? Tracking ends immediately.</p>
+            <button class="btn btn-danger" @onclick="Stop" disabled="@busy">Stop and save</button>
+            <button class="btn" @onclick="() => confirmingStop = false" disabled="@busy">Keep riding</button>
+        }
+        else
+        {
+            <button class="btn" @onclick="() => confirmingStop = true" disabled="@(busy || Transitioning)">Stop ride</button>
+        }
+    </section>
+}
+@if (!string.IsNullOrWhiteSpace(error)) { <p class="alert alert-danger" role="alert">@error</p> }
+
+@code {
+    [Parameter] public Guid RouteId { get; set; }
+    private RouteSummary? route;
+    private string? error;
+    private bool busy, confirmingStart, confirmingStop;
+
+    private bool Transitioning => Session.State is RideSessionState.Starting or RideSessionState.Stopping;
+
+    protected override void OnInitialized() => Session.SnapshotChanged += Changed;
+
+    protected override async Task OnParametersSetAsync() => route = (await Routes.GetAsync(RouteId))?.Summary;
+
+    private async Task Start() => await Run(async () => { confirmingStart = false; await Session.StartAsync(RouteId); });
+
+    private Task TogglePause() => Run(() => Session.Snapshot?.State == RideSessionState.Paused ? Session.ResumeAsync() : Session.PauseAsync());
+
+    private Task Stop() => Run(async () => { confirmingStop = false; await Session.StopAsync(); Navigation.NavigateTo("/rides"); });
+
+    private async Task Run(Func<Task> action)
+    {
+        if (busy) return;
+        busy = true; error = null;
+        try { await action(); }
+        catch (Exception ex) { error = ex.Message; }
+        finally { busy = false; }
+    }
+
+    private void Changed(TrackerSnapshot snapshot) => _ = InvokeAsync(StateHasChanged);
+
+    // Disposal must not stop the ride: navigating away or losing visibility is not an explicit stop.
+    public void Dispose() => Session.SnapshotChanged -= Changed;
+}

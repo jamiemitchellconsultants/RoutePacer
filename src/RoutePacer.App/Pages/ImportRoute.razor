@@ -1,0 +1,25 @@
+@page "/import"
+@inject RouteCatalogService Catalog
+
+<PageTitle>Import route</PageTitle>
+<h1>Import a route</h1>
+<p>Choose a timed GPX or FIT route. The file stays on this device.</p>
+<InputFile OnChange="Import" accept=".gpx,.fit" disabled="@busy" />
+@if (busy) { <p role="status">Importing route…</p> }
+@if (!string.IsNullOrWhiteSpace(error)) { <p class="alert alert-danger" role="alert">@error</p> }
+@if (summary is not null)
+{
+    <section class="route-success" aria-live="polite"><h2>@summary.Name</h2><p>@($"{summary.TotalDistanceMeters / 1000d:0.0} km · {summary.PointCount} points")</p><p>@(summary.TotalDurationSeconds.HasValue ? "Timed route" : "Distance-only route")</p><a class="btn btn-primary" href="@($"/track/{summary.RouteId:D}")">Start ride</a> <a href="/routes">View routes</a></section>
+}
+
+@code {
+    private bool busy; private string? error; private RouteSummary? summary;
+    private async Task Import(InputFileChangeEventArgs args)
+    {
+        if (busy) return; busy = true; error = null; summary = null;
+        try { summary = await Catalog.ImportAsync(args.File, null); }
+        catch (RouteImportException ex) { error = ex.Code switch { "too-few-points" => "The route needs at least three distinct points.", "invalid-coordinate" => "The route contains an invalid coordinate.", "zero-length-route" => "The route has no measurable distance.", "file-too-large" => "Choose a GPX or FIT file no larger than 50 MB.", _ => "Could not import that route. Check the file and try again." }; }
+        catch (Exception) { error = "Could not import that route. Check the file and try again."; }
+        finally { busy = false; }
+    }
+}

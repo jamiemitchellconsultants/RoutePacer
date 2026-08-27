@@ -1,0 +1,12 @@
+<article class="route-card">
+    <h2>@Route.Name</h2>
+    <p>@($"{Route.TotalDistanceMeters / 1000d:0.0} km · {Route.PointCount} points")</p>
+    <p>@(Route.TotalDurationSeconds.HasValue ? "Timed" : "Distance only")</p>
+    <a class="btn btn-primary" href="@($"/track/{Route.RouteId:D}")">Start ride</a>
+    <button class="btn" @onclick="() => OnDelete.InvokeAsync(Route)" disabled="@Busy">Delete</button>
+</article>
+@code {
+    [Parameter, EditorRequired] public RouteSummary Route { get; set; } = default!;
+    [Parameter] public EventCallback<RouteSummary> OnDelete { get; set; }
+    [Parameter] public bool Busy { get; set; }
+}

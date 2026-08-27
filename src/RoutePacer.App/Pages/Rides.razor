@@ -1,0 +1,50 @@
+@page "/rides"
+@inject IRideRepository Repository
+
+<PageTitle>Ride history</PageTitle>
+<h1>Ride history</h1>
+
+@if (rides is null)
+{
+    <p role="status">Loading rides…</p>
+}
+else if (rides.Count == 0)
+{
+    <p>No rides recorded on this device.</p>
+}
+else
+{
+    @foreach (var ride in rides)
+    {
+        <RideSummaryCard Ride="ride" Busy="@busy" OnDelete="Ask" />
+        @if (pending?.RideId == ride.RideId)
+        {
+            <div class="confirm" role="alert">
+                <p>Delete the ride started @ride.StartedAtUtc.ToLocalTime().ToString("g")? This cannot be undone.</p>
+                <button class="btn btn-danger" @onclick="() => Confirm(ride)" disabled="@busy">Delete ride</button>
+                <button class="btn" @onclick="() => pending = null" disabled="@busy">Cancel</button>
+            </div>
+        }
+    }
+}
+@if (!string.IsNullOrWhiteSpace(error)) { <p class="alert alert-danger" role="alert">@error</p> }
+
+@code {
+    private IReadOnlyList<RideSummary>? rides;
+    private RideSummary? pending;
+    private string? error;
+    private bool busy;
+
+    protected override async Task OnInitializedAsync() => rides = await Repository.ListAsync();
+
+    private void Ask(RideSummary ride) { error = null; pending = ride; }
+
+    private async Task Confirm(RideSummary ride)
+    {
+        if (busy) return;
+        busy = true; error = null;
+        try { await Repository.DeleteAsync(ride.RideId); pending = null; rides = await Repository.ListAsync(); }
+        catch (Exception) { error = "Could not delete that ride. Try again."; }
+        finally { busy = false; }
+    }
+}

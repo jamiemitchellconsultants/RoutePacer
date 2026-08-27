@@ -1,0 +1,15 @@
+{
+  "fixtureVersion": 1,
+  "publicJwk": {
+    "kty": "EC",
+    "crv": "P-256",
+    "x": "UtdWHp_xeGuOkarqYW_IGdtg5osMQWJNFEhxyyE5eXs",
+    "y": "GK7gB55K5rtaXVbsm7mKWE4kLH_8V-2TKxYzq5SaVNI"
+  },
+  "canonicalText": "rt\n1\nhttps://pacetracking.tqaentry.com/api/handoffs/9Xq2mWbTf4LpN0sRvEjKcYzA7dHuG1iObQ3xVn5MtSw\nCafé & climb\n1787832000000",
+  "payloadUrl": "https://pacetracking.tqaentry.com/api/handoffs/9Xq2mWbTf4LpN0sRvEjKcYzA7dHuG1iObQ3xVn5MtSw",
+  "name": "Café & climb",
+  "timestamp": 1787832000000,
+  "signature": "LNGZHR4iJ5q4kdMiRJ2a8ahbbMN53wbgZ3jA9EuzoQ7jg4lLnCsz1EWzcAEzk-nSKwOFmEC7T1asYrkHuwkUpg",
+  "invocationUrl": "https://pacetracking.tqaentry.com/open?src=RouteTimer&v=1&payload=https%3A%2F%2Fpacetracking.tqaentry.com%2Fapi%2Fhandoffs%2F9Xq2mWbTf4LpN0sRvEjKcYzA7dHuG1iObQ3xVn5MtSw&name=Caf%C3%A9%20%26%20climb&ts=1787832000000&sig=LNGZHR4iJ5q4kdMiRJ2a8ahbbMN53wbgZ3jA9EuzoQ7jg4lLnCsz1EWzcAEzk-nSKwOFmEC7T1asYrkHuwkUpg"
+}

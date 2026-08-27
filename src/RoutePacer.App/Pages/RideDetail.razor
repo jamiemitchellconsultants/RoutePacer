@@ -1,0 +1,82 @@
+@page "/rides/{RideId:guid}"
+@inject IRideRepository Rides
+@inject IRouteRepository Routes
+@inject NavigationManager Navigation
+
+<PageTitle>Ride detail</PageTitle>
+
+@if (loading)
+{
+    <p role="status">Loading ride…</p>
+}
+else if (ride is null)
+{
+    <h1>Ride not found</h1>
+    <p>This ride is not stored on this device. <a href="/rides">Back to ride history</a>.</p>
+}
+else
+{
+    <h1>@(routeName ?? "Ride")</h1>
+    <p><span class="badge">@ride.Status</span></p>
+    <dl class="ride-detail">
+        <dt>Started</dt><dd>@ride.StartedAtUtc.ToLocalTime().ToString("g")</dd>
+        <dt>Ended</dt><dd>@(ride.EndedAtUtc is { } ended ? ended.ToLocalTime().ToString("g") : RideFormat.NoValue)</dd>
+        <dt>Distance</dt><dd>@($"{ride.TotalDistanceMeters / 1000d:0.00} km")</dd>
+        <dt>Duration</dt><dd>@RideFormat.Elapsed(TimeSpan.FromSeconds(ride.DurationSeconds))</dd>
+        <dt>Average speed</dt><dd>@RideFormat.Speed(ride.AvgSpeedMps)</dd>
+        <dt>Accepted GPS points</dt><dd>@points.Count</dd>
+        <dt>Final time delta</dt><dd>@RideFormat.TimeDelta(last?.DeltaTimeSeconds)</dd>
+        <dt>Final distance delta</dt><dd>@RideFormat.Delta(last?.DeltaDistanceMeters, "m")</dd>
+        <dt>Final line</dt><dd>@RideFormat.CrossTrack(last?.CrossTrackErrorMeters)</dd>
+    </dl>
+    @if (ride.Status == RideStatus.Interrupted)
+    {
+        <p>This ride was interrupted before it was completed, so its totals cover only the part that was recorded.</p>
+    }
+    @if (confirming)
+    {
+        <div class="confirm" role="alert">
+            <p>Delete the ride started @ride.StartedAtUtc.ToLocalTime().ToString("g")? This cannot be undone.</p>
+            <button class="btn btn-danger" @onclick="Delete" disabled="@busy">Delete ride</button>
+            <button class="btn" @onclick="() => confirming = false" disabled="@busy">Cancel</button>
+        </div>
+    }
+    else
+    {
+        <button class="btn" @onclick="() => confirming = true">Delete ride</button>
+    }
+}
+@if (!string.IsNullOrWhiteSpace(error)) { <p class="alert alert-danger" role="alert">@error</p> }
+
+@code {
+    [Parameter] public Guid RideId { get; set; }
+
+    private RideSummary? ride;
+    private IReadOnlyList<RidePoint> points = [];
+    private RidePoint? last;
+    private string? routeName;
+    private string? error;
+    private bool loading = true, busy, confirming;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        loading = true;
+        ride = (await Rides.ListAsync()).SingleOrDefault(x => x.RideId == RideId);
+        if (ride is not null)
+        {
+            points = await Rides.GetPointsAsync(RideId);
+            last = points.Count > 0 ? points[^1] : null;
+            routeName = (await Routes.GetAsync(ride.RouteId))?.Summary.Name;
+        }
+        loading = false;
+    }
+
+    private async Task Delete()
+    {
+        if (busy) return;
+        busy = true; error = null;
+        try { await Rides.DeleteAsync(RideId); Navigation.NavigateTo("/rides"); }
+        catch (Exception) { error = "Could not delete that ride. Try again."; }
+        finally { busy = false; }
+    }
+}
