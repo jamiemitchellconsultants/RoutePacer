@@ -9,6 +9,7 @@ This document records what was asked, what was decided, why, and what followed.
 | # | Date | Title | Kind | Decision summary |
 |---|---|---|---|---|
 | [1](#entry-design-and-plan-public-routetimer-handoff-relay) | 2026-08-27 | Design and plan public RouteTimer handoff relay | product | Host the Blazor WebAssembly PWA and a .NET 10 relay API in one ASP.NET Core container behind shared Caddy. |
+| [2](#entry-docs-add-task-pushes-and-review-gates) | 2026-08-27 | docs: add task pushes and review gates | product | Require every task to push its commit to the current feature branch. Add explicit approval gates after scaffold creation, manual import, RouteTimer Contract v1 intake, rider pacing workflows, and release acceptance. |
 
 ---
 
@@ -29,3 +30,23 @@ Host the Blazor WebAssembly PWA and a .NET 10 relay API in one ASP.NET Core cont
 ## Consequences
 
 RouteTimer remains private and sends timed GPX only through outbound HTTPS. A deliberate privacy exception allows readable GPX in the public relay until consumption or expiry, while imported routes and rides remain on the phone. Deployment gains PostgreSQL, migration readiness, Caddy redaction, runtime secret provisioning, production-like cross-repository tests, and a strict enablement sequence. The implementation plan expands to cover these boundaries before tracking release acceptance.
+
+---
+
+<a id="entry-docs-add-task-pushes-and-review-gates"></a>
+
+## Entry 2 — 2026-08-27 — docs: add task pushes and review gates
+
+*Kind: product. Status: accepted.*
+
+## Context
+
+The implementation plan already divided the build into twenty testable tasks, but completion of a task did not guarantee that its commit was available remotely. The plan also depended on Superpowers review behavior without encoding milestone review stops that a Tier 1 agent could follow directly.
+
+## Decision
+
+Require every task to push its commit to the current feature branch. Add explicit approval gates after scaffold creation, manual import, RouteTimer Contract v1 intake, rider pacing workflows, and release acceptance. Each gate defines verification scope, correction staging, correction commits, pushing, and the approval needed to continue.
+
+## Consequences
+
+Implementation progress becomes remotely recoverable after every task and cannot cross major subsystem boundaries without review. This adds reviewer latency and may create correction commits, but it reduces accumulated defects in import, relay security, pacing, and deployment work. Task 19 now produces ignored captured-log evidence so final privacy scans cannot pass without logs to inspect.
