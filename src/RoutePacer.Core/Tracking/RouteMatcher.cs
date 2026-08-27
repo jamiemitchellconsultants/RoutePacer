@@ -26,10 +26,11 @@ public sealed class RouteMatcher(RouteMatcherOptions? options = null)
             var p0 = route.Points[i]; var p1 = route.Points[i + 1];
             var a = GeoMath.ToLocalMeters(p0.Latitude, p0.Longitude, fix.Latitude, fix.Longitude);
             var b = GeoMath.ToLocalMeters(p1.Latitude, p1.Longitude, fix.Latitude, fix.Longitude);
-            var lengthSquared = b.X * b.X + b.Y * b.Y;
+            var dx = b.X - a.X; var dy = b.Y - a.Y;
+            var lengthSquared = dx * dx + dy * dy;
             if (lengthSquared <= 0) continue;
-            var t = Math.Clamp((-(a.X * (b.X - a.X) + a.Y * (b.Y - a.Y))) / lengthSquared, 0, 1);
-            var x = a.X + t * (b.X - a.X); var y = a.Y + t * (b.Y - a.Y);
+            var t = Math.Clamp((-(a.X * dx + a.Y * dy)) / lengthSquared, 0, 1);
+            var x = a.X + t * dx; var y = a.Y + t * dy;
             var cross = Math.Sqrt(x * x + y * y);
             var routeDistance = p0.DistanceFromStartMeters + t * (p1.DistanceFromStartMeters - p0.DistanceFromStartMeters);
             var continuityPenalty = previous.HasValue && i < previous.Value ? 0.0001 : 0;

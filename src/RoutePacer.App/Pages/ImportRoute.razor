@@ -4,7 +4,7 @@
 <PageTitle>Import route</PageTitle>
 <h1>Import a route</h1>
 <p>Choose a timed GPX or FIT route. The file stays on this device.</p>
-<InputFile OnChange="Import" accept=".gpx,.fit" disabled="busy" />
+<InputFile OnChange="Import" accept=".gpx,.fit" disabled="@busy" />
 @if (busy) { <p role="status">Importing route…</p> }
 @if (!string.IsNullOrWhiteSpace(error)) { <p class="alert alert-danger" role="alert">@error</p> }
 @if (summary is not null)

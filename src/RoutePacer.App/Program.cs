@@ -14,6 +14,7 @@ builder.RootComponents.Add<App>("#app");
 builder.RootComponents.Add<HeadOutlet>("head::after");
 
 builder.Services.AddScoped(sp => new HttpClient { BaseAddress = new Uri(builder.HostEnvironment.BaseAddress) });
+builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddScoped<IIndexedDbModule, IndexedDbModule>();
 builder.Services.AddScoped<IRouteRepository, IndexedDbRouteRepository>();
 builder.Services.AddScoped<IRideRepository, IndexedDbRideRepository>();
