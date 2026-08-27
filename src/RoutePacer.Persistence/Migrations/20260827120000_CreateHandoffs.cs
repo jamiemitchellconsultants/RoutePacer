@@ -1,9 +1,15 @@
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
 namespace RoutePacer.Persistence.Migrations;
 
+// EF Core discovers migrations by this attribute; without it MigrateAsync applies nothing and a fresh
+// deployment comes up with no handoffs table.
+[DbContext(typeof(RoutePacerDbContext))]
+[Migration("20260827120000_CreateHandoffs")]
 public partial class CreateHandoffs : Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder)
