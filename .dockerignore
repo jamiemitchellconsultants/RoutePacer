@@ -1,0 +1,8 @@
+.git
+**/bin
+**/obj
+**/TestResults
+artifacts
+*.gpx
+*.fit
+deploy/.env

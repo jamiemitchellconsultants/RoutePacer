@@ -1,0 +1,37 @@
+services:
+  routepacer-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${ROUTEPACER_DB_NAME:-routepacer}
+      POSTGRES_USER: ${ROUTEPACER_DB_USER:-routepacer}
+      POSTGRES_PASSWORD: ${ROUTEPACER_DB_PASSWORD:?set ROUTEPACER_DB_PASSWORD}
+    volumes: [routepacer_postgres:/var/lib/postgresql/data]
+    networks: [routepacer-private]
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U ${ROUTEPACER_DB_USER:-routepacer}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  routepacer:
+    image: ghcr.io/jamiemitchellconsultants/routepacer:${ROUTEPACER_IMAGE_TAG:-latest}
+    depends_on:
+      routepacer-db:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_HTTP_PORTS: 8080
+      Database__ApplyMigrations: "true"
+      ConnectionStrings__RoutePacer: Host=routepacer-db;Database=${ROUTEPACER_DB_NAME:-routepacer};Username=${ROUTEPACER_DB_USER:-routepacer};Password=${ROUTEPACER_DB_PASSWORD:?set ROUTEPACER_DB_PASSWORD}
+      HandoffRelay__UploadsEnabled: ${ROUTEPACER_RELAY_UPLOADS_ENABLED:-false}
+      HandoffRelay__PublicOrigin: https://pacetracking.tqaentry.com
+      HandoffRelay__UploadCredential: ${ROUTEPACER_RELAY_UPLOAD_KEY:-}
+      RouteTimerInvocation__Enabled: ${ROUTEPACER_ROUTE_TIMER_INTAKE_ENABLED:-false}
+      RouteTimerInvocation__PublicKeyJwk: ${ROUTEPACER_ROUTE_TIMER_PUBLIC_JWK:-}
+    networks: [routepacer-private, mcp-public]
+volumes:
+  routepacer_postgres:
+networks:
+  routepacer-private:
+    internal: true
+  mcp-public:
+    external: true

@@ -1,0 +1,23 @@
+@page "/routes"
+@inject IRouteRepository Repository
+
+<PageTitle>Routes</PageTitle>
+<h1>Your routes</h1>
+@if (routes is null)
+{
+    <p role="status">Loading routes…</p>
+}
+else if (routes.Count == 0)
+{
+    <p>No routes are saved yet. <a href="/import">Import a GPX or FIT route</a>.</p>
+}
+else
+{
+    <div class="route-list">
+        @foreach (var route in routes)
+        {
+            <RouteSummaryCard Route="route" />
+        }
+    </div>
+}
+@code { private IReadOnlyList<RouteSummary>? routes; protected override async Task OnInitializedAsync() => routes = await Repository.ListAsync(); }

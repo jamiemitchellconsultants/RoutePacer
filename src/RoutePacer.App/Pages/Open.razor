@@ -1,0 +1,12 @@
+@page "/open"
+@inject RoutePacer.App.Invocation.RouteTimerInvocationService Invocations
+@inject NavigationManager Navigation
+<PageTitle>Open shared route</PageTitle>
+<h1>Open shared route</h1>
+@if (loading) { <p role="status">Validating and importing shared route…</p> }
+else if (error is not null) { <p role="alert">Could not import shared route.</p><p>@error Try importing the GPX file manually.</p> }
+else if (route is not null) { <p>Ready: @route.Name</p><a class="btn btn-primary" href="@($"/track/{route.RouteId:D}")">Start ride</a> }
+@code {
+    private bool loading = true; private string? error; private RoutePacer.Core.Domain.RouteSummary? route;
+    protected override async Task OnInitializedAsync() { try { route = await Invocations.ImportAsync(new Uri(Navigation.Uri)); } catch { error = "The link may have expired or been changed."; } finally { loading = false; Navigation.NavigateTo("/open", replace: true); } }
+}

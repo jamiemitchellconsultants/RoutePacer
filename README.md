@@ -4,3 +4,12 @@ cycling training app that is a stand alone Blazor wasm app that can download a g
 ## Planning document
 
 - `OFFLINE_FIRST_BLAZOR_CYCLING_APP_PLAN.md`: detailed offline-first implementation plan, including RouteTimer-to-RoutePacer GPX invocation flow.
+
+## Local development
+
+```bash
+dotnet restore RoutePacer.slnx
+dotnet build RoutePacer.slnx --no-restore
+dotnet test RoutePacer.slnx --no-build
+dotnet run --project src/RoutePacer.Server/RoutePacer.Server.csproj
+```

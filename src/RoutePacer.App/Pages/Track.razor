@@ -1,0 +1,35 @@
+@page "/track/{RouteId:guid}"
+@implements IDisposable
+@inject RideSessionService Session
+@inject NavigationManager Navigation
+
+<PageTitle>Track ride</PageTitle>
+@if (Session.Snapshot is null)
+{
+    <h1>Ready to ride</h1>
+    <button class="btn btn-primary" @onclick="Start">Start ride</button>
+}
+else
+{
+    var s = Session.Snapshot;
+    <h1>@s.Route.Name</h1>
+    <section class="tracker" aria-live="polite">
+        <PaceDelta Label="Time" Value="@(RideFormat.TimeDelta(s.Pacing?.DeltaTimeSeconds))" />
+        <PaceDelta Label="Distance" Value="@(RideFormat.Delta(s.Pacing?.DeltaDistanceMeters, "m"))" />
+        <p>Speed: @RideFormat.Speed(s.Pacing?.SpeedMps)</p>
+        <p>Progress: @($"{s.DistanceMeters / s.Route.TotalDistanceMeters * 100:0}%")</p>
+        <button @onclick="TogglePause">@(s.State == RideSessionState.Paused ? "Resume" : "Pause")</button>
+        <button @onclick="Stop">Stop ride</button>
+    </section>
+}
+@if (!string.IsNullOrWhiteSpace(error)) { <p role="alert">@error</p> }
+@code {
+    [Parameter] public Guid RouteId { get; set; }
+    private string? error;
+    protected override void OnInitialized() => Session.SnapshotChanged += Changed;
+    private async Task Start() { try { await Session.StartAsync(RouteId); } catch (Exception ex) { error = ex.Message; } }
+    private Task TogglePause() => Session.Snapshot?.State == RideSessionState.Paused ? Session.ResumeAsync() : Session.PauseAsync();
+    private async Task Stop() { await Session.StopAsync(); Navigation.NavigateTo("/rides"); }
+    private void Changed(TrackerSnapshot snapshot) => _ = InvokeAsync(StateHasChanged);
+    public void Dispose() => Session.SnapshotChanged -= Changed;
+}

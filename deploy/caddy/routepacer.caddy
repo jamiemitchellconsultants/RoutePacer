@@ -1,0 +1,6 @@
+pacetracking.tqaentry.com {
+    log {
+        output discard
+    }
+    reverse_proxy routepacer:8080
+}

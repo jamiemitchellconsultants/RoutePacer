@@ -1,0 +1,8 @@
+@using RoutePacer.Core.Domain
+<article class="route-card">
+    <h2>@Route.Name</h2>
+    <p>@($"{Route.TotalDistanceMeters / 1000d:0.0} km · {Route.PointCount} points")</p>
+    <p>@(Route.TotalDurationSeconds.HasValue ? "Timed" : "Distance only")</p>
+    <a href="@($"/track/{Route.RouteId:D}")">Start ride</a>
+</article>
+@code { [Parameter, EditorRequired] public RouteSummary Route { get; set; } = default!; }

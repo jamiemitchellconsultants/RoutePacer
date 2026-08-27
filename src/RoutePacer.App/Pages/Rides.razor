@@ -1,0 +1,5 @@
+@page "/rides"
+@inject IRideRepository Repository
+<PageTitle>Ride history</PageTitle><h1>Ride history</h1>
+@if (rides is null) { <p>Loading…</p> } else if (rides.Count == 0) { <p>No rides recorded on this device.</p> } else { @foreach (var ride in rides) { <article><h2><a href="@($"/rides/{ride.RideId:D}")">@ride.StartedAtUtc.ToLocalTime():g</a></h2><p>@ride.Status · @ride.TotalDistanceMeters:0 m · @ride.DurationSeconds:0 s</p></article> } }
+@code { private IReadOnlyList<RideSummary>? rides; protected override async Task OnInitializedAsync() => rides = await Repository.ListAsync(); }

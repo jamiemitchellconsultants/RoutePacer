@@ -1,0 +1,6 @@
+@RoutePacer.Server_HostAddress = http://localhost:0
+
+GET {{RoutePacer.Server_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
