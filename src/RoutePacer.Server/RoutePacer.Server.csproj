@@ -7,7 +7,10 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\RoutePacer.App\RoutePacer.App.csproj" ReferenceOutputAssembly="false" />
+    <!-- A hosted Blazor WebAssembly app must be a normal ProjectReference. With ReferenceOutputAssembly="false"
+         the server collects the source index.html and its fingerprint placeholders are never substituted, so the
+         published page requests _framework/blazor.webassembly and the app does not boot. -->
+    <ProjectReference Include="..\RoutePacer.App\RoutePacer.App.csproj" />
     <ProjectReference Include="..\RoutePacer.Persistence\RoutePacer.Persistence.csproj" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" />

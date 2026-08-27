@@ -23,4 +23,10 @@
     <Using Include="Xunit" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Content Include="Fixtures\**" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\docs\contracts\fixtures\route-timer-contract-v1.json"
+             Link="Fixtures\route-timer-contract-v1.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

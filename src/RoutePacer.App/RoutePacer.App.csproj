@@ -4,7 +4,11 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <OverrideHtmlAssetPlaceholders>true</OverrideHtmlAssetPlaceholders>
+    <!-- The hosted publish does not run the client's HTML placeholder substitution, so a fingerprinted
+         index.html would keep the literal #[.{fingerprint}] token and request a path that 404s. Cache
+         invalidation comes from the service worker's versioned cache and asset manifest instead. -->
+    <WasmFingerprintAssets>false</WasmFingerprintAssets>
+    <StaticWebAssetFingerprintContent>false</StaticWebAssetFingerprintContent>
     <ServiceWorkerAssetsManifest>service-worker-assets.js</ServiceWorkerAssetsManifest>
   </PropertyGroup>
 
