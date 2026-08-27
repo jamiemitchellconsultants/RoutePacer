@@ -4,17 +4,17 @@
 
 **Goal:** Build an installable Blazor WebAssembly PWA that imports timed GPX/FIT routes, tracks an active-screen ride entirely offline, shows stable time and distance lead/lag, persists rides locally, and accepts a secure RouteTimer handoff.
 
-**Architecture:** Use a dependency-free `RoutePacer.Core` library for models, parsing contracts, normalization, matching, and pacing; a `RoutePacer.App` Blazor WebAssembly PWA for IndexedDB, browser interop, orchestration, and UI; and focused xUnit, bUnit, and Playwright test projects. Route data is normalized once at import, stored in separate IndexedDB metadata/point stores, loaded as contiguous arrays for tracking, and processed through a session state machine that owns GPS, wake lock, matching, pacing, persistence, and throttled UI snapshots.
+**Architecture:** Use a dependency-free `RoutePacer.Core` library for route and ride behavior, a `RoutePacer.App` Blazor WebAssembly PWA for IndexedDB and offline tracking, a `RoutePacer.Server` ASP.NET Core host for the PWA and public relay API, and `RoutePacer.Persistence` for the dedicated PostgreSQL handoff store. RouteTimer uploads timed GPX outbound to the same-origin relay; the phone verifies Contract v1, atomically consumes the payload once, imports it through the same client pipeline as manual GPX, and keeps the resulting route on-device.
 
-**Tech Stack:** .NET 10, Blazor WebAssembly PWA, C# 14, `Dynastream.Fit`, `System.Xml.Linq`, browser IndexedDB, Geolocation API, Screen Wake Lock API, xUnit, FluentAssertions, bUnit, and Microsoft Playwright.
+**Tech Stack:** .NET 10, C# 14, ASP.NET Core minimal APIs, Blazor WebAssembly PWA, EF Core 10, Npgsql, PostgreSQL 16, Docker Compose, Caddy, `Garmin.FIT.Sdk`, `System.Xml.Linq`, browser IndexedDB, Web Crypto, Geolocation API, Screen Wake Lock API, xUnit, FluentAssertions, bUnit, Testcontainers, and Microsoft Playwright.
 
-**Spec:** `OFFLINE_FIRST_BLAZOR_CYCLING_APP_PLAN.md`
+**Spec:** `docs/superpowers/specs/2026-08-27-routepacer-public-handoff-relay-design.md`, reconciling the original product brief in `OFFLINE_FIRST_BLAZOR_CYCLING_APP_PLAN.md`
 
 ## Global Constraints
 
 - Tracking targets an active, visible screen; continuous background tracking and native background services remain out of scope.
 - The app must start without a network connection after its first successful load/install.
-- Route and ride data remain client-side in IndexedDB; no application telemetry is enabled by default.
+- Manual imports, imported routes, ride data, and tracking remain client-side in IndexedDB; an explicit RouteTimer handoff temporarily stores readable GPX in the relay for no more than 10 minutes and deletes it immediately on successful consumption.
 - Manual import accepts only `.gpx` and `.fit` files, with at least 3 valid points and a maximum file size of 50 MB.
 - Geolocation permission is requested only after the rider explicitly starts a ride.
 - GPS uses `enableHighAccuracy: true`, `timeout: 5000`, and `maximumAge: 0`.
@@ -22,9 +22,17 @@
 - Time delta uses `DeltaTimeSeconds = live elapsed time - target elapsed time`; negative means ahead and positive means behind.
 - Distance delta uses route-progress semantics: projected rider distance minus expected route distance at the same live elapsed time. Cross-track error is displayed separately.
 - A route without usable timing remains trackable in distance-only mode and never fabricates a time delta.
-- RouteTimer contract v1 uses `src=rt`, `v=1`, `payload`, `name`, `ts`, and `sig`; accepted payloads expire after 10 minutes and are imported at most once.
+- RouteTimer Contract v1 requires `src`, `v`, `payload`, `name`, `ts`, and `sig` exactly once; canonical bytes are `rt\n1\n{payload-absolute-uri}\n{name-or-empty}\n{unix-milliseconds}` with UTF-8 encoding and no trailing line feed.
+- Contract v1 uses ECDSA P-256, SHA-256, and fixed-width IEEE-P1363 signatures; RoutePacer publishes only RouteTimer's configured public JWK.
+- Relay uploads accept only a non-empty `application/gpx+xml` body of at most 52,428,800 bytes and fix expiry at exactly 10 minutes.
+- The relay generates a 32-byte random token, returns 43-character unpadded base64url, and stores only `SHA-256(token)`.
+- Consumption is one PostgreSQL `DELETE ... RETURNING` operation: the first unexpired request returns exact bytes and deletes the row immediately; every other outcome is the same `404`.
+- The dedicated PostgreSQL database has restart-durable storage, publishes no host port, and has no backup or restore path.
+- Relay uploads and PWA RouteTimer intake are independently disableable and tracked production configuration keeps both disabled.
+- Application, Caddy, ingress, trace, and metric output never contains credentials, tokens, payload URLs, invocation queries, signatures, route names, or GPX bytes.
 - The RoutePacer production origin is `https://pacetracking.tqaentry.com`.
 - Web Share Target intake is an enhancement after the v1 HTTPS deep-link path, not an MVP prerequisite.
+- Production deployment is forward-only and follows RouteTimer's Docker Compose plus shared-Caddy pattern; there is no rollback plan.
 
 ---
 
@@ -32,16 +40,19 @@
 
 | Area | Files | Responsibility |
 |---|---|---|
-| Solution | `RoutePacer.slnx`, `global.json`, `Directory.Build.props` | Pin .NET 10 and shared build/test policy. |
+| Solution | `RoutePacer.slnx`, `global.json`, `Directory.Build.props`, `Directory.Packages.props` | Pin .NET 10, package versions, and shared build/test policy. |
 | Core domain | `src/RoutePacer.Core/Domain/*.cs` | Immutable route, route-point, ride, location, pacing, and state types. |
 | Import | `src/RoutePacer.Core/Import/*.cs` | GPX/FIT parsing, validation, normalization, cumulative distance, and timing. |
 | Matching/pacing | `src/RoutePacer.Core/Tracking/*.cs` | Metric projection, segment-window matching, temporal interpolation, and lead/lag math. |
+| Hosted server | `src/RoutePacer.Server/{Program.cs,Hosting,Health,Handoffs}/*` | Serve the PWA, relay API, feature controls, safe logging, rate limiting, health, and SPA fallback. |
+| Relay persistence | `src/RoutePacer.Persistence/Handoffs/*`, `src/RoutePacer.Persistence/Migrations/*` | PostgreSQL token hashing, exact payload storage, atomic delete-returning consumption, migrations, and expiry cleanup. |
 | Browser persistence | `src/RoutePacer.App/Storage/*.cs`, `src/RoutePacer.App/wwwroot/js/storage.js` | Versioned IndexedDB schema and typed transactional access. |
-| Browser capabilities | `src/RoutePacer.App/Browser/*.cs`, `src/RoutePacer.App/wwwroot/js/{gps,wakelock,invocation}.js` | GPS callbacks, wake lock, URL inspection/cleanup, signature verification. |
+| Browser capabilities | `src/RoutePacer.App/Browser/*.cs`, `src/RoutePacer.App/wwwroot/js/{gps,wakelock,invocation}.js` | GPS callbacks, wake lock, strict URL intake/cleanup, and P-256 verification. |
 | Application workflows | `src/RoutePacer.App/Routes/*.cs`, `src/RoutePacer.App/Rides/*.cs`, `src/RoutePacer.App/Invocation/*.cs` | Import, library, tracking state machine, ride recording, and RouteTimer handoff. |
 | UI | `src/RoutePacer.App/Pages/*.razor`, `src/RoutePacer.App/Components/*.razor` | Import, library, tracker, history, status, and failure states. |
 | Offline shell | `src/RoutePacer.App/wwwroot/{manifest.webmanifest,service-worker.js,service-worker.published.js}` | Installability, cache versioning, app-shell offline behavior. |
-| Tests | `tests/RoutePacer.Core.Tests`, `tests/RoutePacer.App.Tests`, `tests/RoutePacer.E2E` | Pure unit, component/service integration, and real-browser offline/capability validation. |
+| Deployment | `Dockerfile`, `deploy/{docker-compose.yml,docker-compose.local.yml,.env.example,README.md,caddy/routepacer.caddy}` | Container build, dedicated PostgreSQL, Caddy routing, secrets, forward-only deployment, and smoke procedure. |
+| Tests | `tests/RoutePacer.Core.Tests`, `tests/RoutePacer.App.Tests`, `tests/RoutePacer.Server.Tests`, `tests/RoutePacer.Persistence.Tests`, `tests/RoutePacer.E2E` | Unit, bUnit, real PostgreSQL/API, deployment, and browser acceptance coverage. |
 
 The implementation is intentionally split into tasks that leave a reviewable, testable capability. Do not combine later UI work into earlier domain tasks.
 
@@ -50,18 +61,25 @@ The implementation is intentionally split into tasks that leave a reviewable, te
 **Files:**
 - Create: `global.json`
 - Create: `Directory.Build.props`
+- Create: `Directory.Packages.props`
+- Create: `.config/dotnet-tools.json`
 - Create: `RoutePacer.slnx`
 - Create: `src/RoutePacer.Core/RoutePacer.Core.csproj`
 - Create: `src/RoutePacer.App/RoutePacer.App.csproj`
 - Create: `src/RoutePacer.App/Program.cs`
+- Create: `src/RoutePacer.Server/RoutePacer.Server.csproj`
+- Create: `src/RoutePacer.Server/Program.cs`
+- Create: `src/RoutePacer.Persistence/RoutePacer.Persistence.csproj`
 - Create: `tests/RoutePacer.Core.Tests/RoutePacer.Core.Tests.csproj`
 - Create: `tests/RoutePacer.App.Tests/RoutePacer.App.Tests.csproj`
+- Create: `tests/RoutePacer.Server.Tests/RoutePacer.Server.Tests.csproj`
+- Create: `tests/RoutePacer.Persistence.Tests/RoutePacer.Persistence.Tests.csproj`
 - Create: `tests/RoutePacer.E2E/RoutePacer.E2E.csproj`
 - Modify: `README.md`
 
 **Interfaces:**
 - Consumes: none.
-- Produces: solution projects targeting `net10.0`; `RoutePacer.App` references `RoutePacer.Core`; test projects reference their production targets.
+- Produces: solution projects targeting `net10.0`; `RoutePacer.App` references `RoutePacer.Core`; `RoutePacer.Server` hosts the published app and references `RoutePacer.Persistence`; each test project references its production target.
 
 - [ ] **Step 1: Pin the SDK and create the solution skeleton**
 
@@ -69,40 +87,87 @@ Run:
 
 ```bash
 dotnet new globaljson --sdk-version 10.0.302 --roll-forward latestFeature
+dotnet new tool-manifest
+dotnet tool install dotnet-ef --version 10.0.11
 dotnet new sln --name RoutePacer --format slnx
 dotnet new classlib --name RoutePacer.Core --output src/RoutePacer.Core --framework net10.0
 dotnet new blazorwasm --name RoutePacer.App --output src/RoutePacer.App --framework net10.0 --pwa --no-https
+dotnet new webapi --name RoutePacer.Server --output src/RoutePacer.Server --framework net10.0 --no-openapi
+dotnet new classlib --name RoutePacer.Persistence --output src/RoutePacer.Persistence --framework net10.0
 dotnet new xunit --name RoutePacer.Core.Tests --output tests/RoutePacer.Core.Tests --framework net10.0
 dotnet new xunit --name RoutePacer.App.Tests --output tests/RoutePacer.App.Tests --framework net10.0
+dotnet new xunit --name RoutePacer.Server.Tests --output tests/RoutePacer.Server.Tests --framework net10.0
+dotnet new xunit --name RoutePacer.Persistence.Tests --output tests/RoutePacer.Persistence.Tests --framework net10.0
 dotnet new xunit --name RoutePacer.E2E --output tests/RoutePacer.E2E --framework net10.0
 ```
 
-Expected: all six commands exit `0`; the PWA template creates `manifest.webmanifest` and both service-worker files.
+Expected: all twelve commands exit `0`; the tool manifest pins EF CLI 10.0.11 and the PWA template creates `manifest.webmanifest` plus both service-worker files.
 
 - [ ] **Step 2: Add projects and references**
 
 Run:
 
 ```bash
-dotnet sln RoutePacer.slnx add src/RoutePacer.Core/RoutePacer.Core.csproj src/RoutePacer.App/RoutePacer.App.csproj tests/RoutePacer.Core.Tests/RoutePacer.Core.Tests.csproj tests/RoutePacer.App.Tests/RoutePacer.App.Tests.csproj tests/RoutePacer.E2E/RoutePacer.E2E.csproj
+dotnet sln RoutePacer.slnx add src/RoutePacer.Core/RoutePacer.Core.csproj src/RoutePacer.App/RoutePacer.App.csproj src/RoutePacer.Server/RoutePacer.Server.csproj src/RoutePacer.Persistence/RoutePacer.Persistence.csproj tests/RoutePacer.Core.Tests/RoutePacer.Core.Tests.csproj tests/RoutePacer.App.Tests/RoutePacer.App.Tests.csproj tests/RoutePacer.Server.Tests/RoutePacer.Server.Tests.csproj tests/RoutePacer.Persistence.Tests/RoutePacer.Persistence.Tests.csproj tests/RoutePacer.E2E/RoutePacer.E2E.csproj
 dotnet add src/RoutePacer.App/RoutePacer.App.csproj reference src/RoutePacer.Core/RoutePacer.Core.csproj
+dotnet add src/RoutePacer.Persistence/RoutePacer.Persistence.csproj reference src/RoutePacer.Core/RoutePacer.Core.csproj
+dotnet add src/RoutePacer.Server/RoutePacer.Server.csproj reference src/RoutePacer.Persistence/RoutePacer.Persistence.csproj
 dotnet add tests/RoutePacer.Core.Tests/RoutePacer.Core.Tests.csproj reference src/RoutePacer.Core/RoutePacer.Core.csproj
 dotnet add tests/RoutePacer.App.Tests/RoutePacer.App.Tests.csproj reference src/RoutePacer.App/RoutePacer.App.csproj
+dotnet add tests/RoutePacer.Server.Tests/RoutePacer.Server.Tests.csproj reference src/RoutePacer.Server/RoutePacer.Server.csproj
+dotnet add tests/RoutePacer.Persistence.Tests/RoutePacer.Persistence.Tests.csproj reference src/RoutePacer.Persistence/RoutePacer.Persistence.csproj
 ```
 
-- [ ] **Step 3: Add explicit test and import dependencies**
+- [ ] **Step 3: Pin dependency versions centrally**
 
-Run:
+Create `Directory.Packages.props` with central management and these reviewed pins:
+
+```xml
+<Project>
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageVersion Include="coverlet.collector" Version="6.0.4" />
+    <PackageVersion Include="bunit" Version="2.9.0" />
+    <PackageVersion Include="Garmin.FIT.Sdk" Version="21.213.0" />
+    <PackageVersion Include="FluentAssertions" Version="8.10.0" />
+    <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.9.0" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageVersion Include="Microsoft.Playwright.Xunit" Version="1.62.0" />
+    <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
+    <PackageVersion Include="Testcontainers.PostgreSql" Version="4.14.0" />
+    <PackageVersion Include="xunit" Version="2.9.3" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+</Project>
+```
+
+Add package references without project-local versions:
 
 ```bash
-dotnet add src/RoutePacer.Core/RoutePacer.Core.csproj package Dynastream.Fit
+dotnet add src/RoutePacer.Core/RoutePacer.Core.csproj package Garmin.FIT.Sdk
+dotnet add src/RoutePacer.Persistence/RoutePacer.Persistence.csproj package Npgsql.EntityFrameworkCore.PostgreSQL
+dotnet add src/RoutePacer.Server/RoutePacer.Server.csproj package Microsoft.AspNetCore.Components.WebAssembly.Server
+dotnet add src/RoutePacer.Server/RoutePacer.Server.csproj package Microsoft.EntityFrameworkCore.Design
+dotnet add src/RoutePacer.Server/RoutePacer.Server.csproj package Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore
 dotnet add tests/RoutePacer.Core.Tests/RoutePacer.Core.Tests.csproj package FluentAssertions
 dotnet add tests/RoutePacer.App.Tests/RoutePacer.App.Tests.csproj package bunit
 dotnet add tests/RoutePacer.App.Tests/RoutePacer.App.Tests.csproj package FluentAssertions
+dotnet add tests/RoutePacer.Server.Tests/RoutePacer.Server.Tests.csproj package Microsoft.AspNetCore.Mvc.Testing
+dotnet add tests/RoutePacer.Server.Tests/RoutePacer.Server.Tests.csproj package Microsoft.Extensions.TimeProvider.Testing
+dotnet add tests/RoutePacer.Persistence.Tests/RoutePacer.Persistence.Tests.csproj package Testcontainers.PostgreSql
+dotnet add tests/RoutePacer.Persistence.Tests/RoutePacer.Persistence.Tests.csproj package Microsoft.Extensions.TimeProvider.Testing
 dotnet add tests/RoutePacer.E2E/RoutePacer.E2E.csproj package Microsoft.Playwright.Xunit
 ```
 
-Record the resolved package versions in the generated project files; do not use floating versions.
+Remove project-local `Version` attributes emitted by templates so every package resolves through `Directory.Packages.props`. All test projects retain centrally managed `Microsoft.NET.Test.Sdk`, `xunit`, and `xunit.runner.visualstudio` references.
 
 - [ ] **Step 4: Enable strict shared build settings**
 
@@ -121,13 +186,24 @@ Create `Directory.Build.props`:
 
 - [ ] **Step 5: Replace template branding and document local commands**
 
-Update the app title/navigation to `RoutePacer`, remove the template counter/weather pages, and add these commands to `README.md`:
+Delete the Web API sample endpoint, update the app title/navigation to `RoutePacer`, and remove the template counter/weather pages. Add this static-web-asset reference to `RoutePacer.Server.csproj`:
+
+```xml
+<ItemGroup>
+  <ProjectReference Include="..\RoutePacer.App\RoutePacer.App.csproj"
+                    ReferenceOutputAssembly="false" />
+</ItemGroup>
+```
+
+Configure the server with `UseBlazorFrameworkFiles()` and `UseStaticFiles()`. Its final fallback returns `404` for paths beginning `/api` or `/health`; every other unmapped navigation sends `wwwroot/index.html`. This prevents misspelled API and health URLs from receiving the SPA shell.
+
+Add these commands to `README.md`:
 
 ```bash
 dotnet restore RoutePacer.slnx
 dotnet build RoutePacer.slnx --no-restore
 dotnet test RoutePacer.slnx --no-build
-dotnet run --project src/RoutePacer.App/RoutePacer.App.csproj
+dotnet run --project src/RoutePacer.Server/RoutePacer.Server.csproj
 ```
 
 - [ ] **Step 6: Verify the clean scaffold**
@@ -145,8 +221,8 @@ Expected: build succeeds with zero warnings; template tests pass.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add global.json Directory.Build.props RoutePacer.slnx src tests README.md
-git commit -m "build: scaffold RoutePacer PWA solution"
+git add global.json Directory.Build.props Directory.Packages.props .config/dotnet-tools.json RoutePacer.slnx src tests README.md
+git commit -m "build: scaffold hosted RoutePacer solution"
 ```
 
 ### Task 2: Define the Domain Model and Storage Contract
@@ -436,7 +512,7 @@ git commit -m "feat: parse GPX reference routes"
 - Create: `tests/RoutePacer.Core.Tests/Fixtures/timed-course.fit`
 
 **Interfaces:**
-- Consumes: `Dynastream.Fit`, `IRouteFileParser`, `RouteNormalizer`.
+- Consumes: `Garmin.FIT.Sdk`, `IRouteFileParser`, `RouteNormalizer`.
 - Produces: `FitRouteParser`; `RouteImportService.ImportAsync(RouteImportRequest, Stream, CancellationToken)` returning `ImportedRoute(RouteTrack Track, string OriginalFileName)`.
 
 - [ ] **Step 1: Write failing FIT and dispatcher tests**
@@ -457,7 +533,7 @@ Expected: FAIL because FIT and orchestration types do not exist.
 
 - [ ] **Step 3: Implement `FitRouteParser`**
 
-Subscribe to `RecordMesg` from the Dynastream decoder, accept records only when both position fields are present, convert FIT semicircles with `degrees = semicircles * (180d / 2147483648d)`, and capture altitude, timestamp, and elapsed-time fields when available. Map decoder failures to `RouteImportException("malformed-fit", ...)` and enforce the same 250,000-point ceiling as GPX.
+Subscribe to `RecordMesg` from the Garmin FIT decoder, accept records only when both position fields are present, convert FIT semicircles with `degrees = semicircles * (180d / 2147483648d)`, and capture altitude, timestamp, and elapsed-time fields when available. Map decoder failures to `RouteImportException("malformed-fit", ...)` and enforce the same 250,000-point ceiling as GPX.
 
 - [ ] **Step 4: Implement one import dispatcher**
 
@@ -638,95 +714,409 @@ git add src/RoutePacer.App/Routes src/RoutePacer.App/Pages src/RoutePacer.App/Co
 git commit -m "feat: add route import and offline library"
 ```
 
-### Task 8: Implement RouteTimer Contract v1 Intake
+### Task 8: Create the Dedicated Handoff Store
+
+**Files:**
+- Create: `src/RoutePacer.Persistence/Handoffs/HandoffRecord.cs`
+- Create: `src/RoutePacer.Persistence/Handoffs/IHandoffStore.cs`
+- Create: `src/RoutePacer.Persistence/Handoffs/PostgresHandoffStore.cs`
+- Create: `src/RoutePacer.Persistence/Handoffs/HandoffToken.cs`
+- Create: `src/RoutePacer.Persistence/RoutePacerDbContext.cs`
+- Create: `src/RoutePacer.Persistence/Migrations/<timestamp>_CreateHandoffs.cs`
+- Create: `tests/RoutePacer.Persistence.Tests/Handoffs/HandoffTokenTests.cs`
+- Create: `tests/RoutePacer.Persistence.Tests/Handoffs/PostgresHandoffStoreTests.cs`
+- Create: `tests/RoutePacer.Persistence.Tests/DatabaseFixture.cs`
+
+**Interfaces:**
+- Consumes: Npgsql EF Core, PostgreSQL 16, `TimeProvider`.
+- Produces: `HandoffToken.Create()`, `HandoffToken.Hash(string)`, and `IHandoffStore.InsertAsync`, `ConsumeAsync`, and `DeleteExpiredAsync`.
+
+- [ ] **Step 1: Write failing token and schema tests**
+
+```csharp
+[Fact]
+public void Create_returns_43_character_unpadded_base64url_and_32_byte_hash()
+{
+    var token = HandoffToken.Create();
+
+    Assert.Matches("^[A-Za-z0-9_-]{43}$", token.Plaintext);
+    Assert.Equal(32, token.Sha256.Length);
+    Assert.Equal(SHA256.HashData(Base64Url.Decode(token.Plaintext)), token.Sha256);
+}
+
+[Fact]
+public async Task Migration_creates_only_the_approved_handoff_columns()
+{
+    var columns = await Database.QueryColumnsAsync("handoffs");
+    Assert.Equal(["token_hash", "content", "created_at", "expires_at"], columns);
+}
+```
+
+Also assert `token_hash` is the primary key, `content` is `bytea`, timestamps are `timestamptz`, and no token, URL, name, or consumed column exists.
+
+- [ ] **Step 2: Run the focused tests to verify failure**
+
+Run: `dotnet test tests/RoutePacer.Persistence.Tests --filter "FullyQualifiedName~HandoffTokenTests|FullyQualifiedName~PostgresHandoffStoreTests"`
+
+Expected: FAIL because the persistence types and migration do not exist.
+
+- [ ] **Step 3: Define the store contract and token helper**
+
+```csharp
+public interface IHandoffStore
+{
+    Task InsertAsync(byte[] tokenHash, ReadOnlyMemory<byte> content,
+        DateTimeOffset createdAt, DateTimeOffset expiresAt,
+        CancellationToken cancellationToken = default);
+    Task<byte[]?> ConsumeAsync(byte[] tokenHash, DateTimeOffset now,
+        CancellationToken cancellationToken = default);
+    Task<int> DeleteExpiredAsync(DateTimeOffset now,
+        CancellationToken cancellationToken = default);
+}
+
+public sealed record HandoffToken(string Plaintext, byte[] Sha256)
+{
+    public static HandoffToken Create();
+    public static byte[] Hash(string plaintext);
+}
+```
+
+`Create` fills exactly 32 bytes with `RandomNumberGenerator.Fill`, returns unpadded base64url, and hashes the decoded random bytes. `Hash` rejects anything outside the exact 43-character base64url shape before decoding and hashing.
+
+- [ ] **Step 4: Implement the minimal EF model and migration**
+
+Map `HandoffRecord` to `handoffs` with the four approved columns. Do not add a navigation, generated numeric ID, concurrency token, consumption flag, or audit columns. Generate the migration with:
+
+```bash
+dotnet tool run dotnet-ef migrations add CreateHandoffs --project src/RoutePacer.Persistence --startup-project src/RoutePacer.Server
+```
+
+- [ ] **Step 5: Implement atomic persistence operations**
+
+Use parameterized SQL for consumption:
+
+```sql
+DELETE FROM handoffs
+WHERE token_hash = @token_hash AND expires_at > @now
+RETURNING content;
+```
+
+`InsertAsync` copies the exact byte sequence. `DeleteExpiredAsync` uses `DELETE FROM handoffs WHERE expires_at <= @now`. Neither operation logs parameters or entity values.
+
+- [ ] **Step 6: Run migration and store tests**
+
+Run:
+
+```bash
+dotnet test tests/RoutePacer.Persistence.Tests --filter "FullyQualifiedName~HandoffTokenTests|FullyQualifiedName~PostgresHandoffStoreTests"
+dotnet tool run dotnet-ef migrations has-pending-model-changes --project src/RoutePacer.Persistence --startup-project src/RoutePacer.Server
+```
+
+Expected: tests PASS; pending-model command reports no changes.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add src/RoutePacer.Persistence tests/RoutePacer.Persistence.Tests
+git commit -m "feat: add ephemeral PostgreSQL handoff store"
+```
+
+### Task 9: Implement Authenticated Relay Creation
+
+**Files:**
+- Create: `src/RoutePacer.Server/Handoffs/HandoffRelayOptions.cs`
+- Create: `src/RoutePacer.Server/Handoffs/HandoffEndpoints.cs`
+- Create: `src/RoutePacer.Server/Handoffs/HandoffUploadService.cs`
+- Create: `src/RoutePacer.Server/Handoffs/UploadCredentialVerifier.cs`
+- Create: `src/RoutePacer.Server/Handoffs/LimitedRequestBodyReader.cs`
+- Create: `src/RoutePacer.Server/Handoffs/HandoffCreatedResponse.cs`
+- Create: `src/RoutePacer.Server/Hosting/SensitiveRequestLoggingFilter.cs`
+- Modify: `src/RoutePacer.Server/Program.cs`
+- Create: `tests/RoutePacer.Server.Tests/Handoffs/HandoffCreationTests.cs`
+- Create: `tests/RoutePacer.Server.Tests/Handoffs/UploadCredentialVerifierTests.cs`
+- Create: `tests/RoutePacer.Server.Tests/Handoffs/LimitedRequestBodyReaderTests.cs`
+
+**Interfaces:**
+- Consumes: `IHandoffStore`, `HandoffToken`, `TimeProvider`, ASP.NET Core rate limiting.
+- Produces: authenticated `POST /api/handoffs`, `HandoffCreatedResponse(string PayloadUrl, DateTimeOffset ExpiresAt)`, and redacted request logging.
+
+- [ ] **Step 1: Write failing API contract tests**
+
+Use `WebApplicationFactory<Program>` with a recording `IHandoffStore` and fake `TimeProvider`. Cover exact GPX bytes and `201`, missing/invalid bearer `401`, empty body `400`, 52,428,801 bytes `413`, any media type other than exactly `application/gpx+xml` as `415`, rate limit `429`, disabled uploads `503`, and store failure as a safe `500`.
+
+```csharp
+[Fact]
+public async Task Valid_upload_returns_exact_origin_and_ten_minute_expiry()
+{
+    Clock.SetUtcNow(new DateTimeOffset(2026, 8, 27, 12, 0, 0, TimeSpan.Zero));
+    using var request = GpxUpload("<gpx/>", ValidCredential);
+
+    var response = await Client.SendAsync(request);
+    var body = await response.Content.ReadFromJsonAsync<HandoffCreatedResponse>();
+
+    Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+    Assert.Matches("^https://pacetracking\\.tqaentry\\.com/api/handoffs/[A-Za-z0-9_-]{43}$", body!.PayloadUrl);
+    Assert.Equal(Clock.GetUtcNow().AddMinutes(10), body.ExpiresAt);
+    Assert.Equal("no-store", response.Headers.CacheControl!.ToString());
+}
+```
+
+- [ ] **Step 2: Run creation tests to verify failure**
+
+Run: `dotnet test tests/RoutePacer.Server.Tests --filter FullyQualifiedName~HandoffCreationTests`
+
+Expected: FAIL because the endpoint is not mapped.
+
+- [ ] **Step 3: Implement constant-time bearer verification**
+
+```csharp
+public sealed class UploadCredentialVerifier(IOptions<HandoffRelayOptions> options)
+{
+    public bool IsValid(string? authorizationHeader);
+}
+```
+
+Require one `Bearer` value. Hash the UTF-8 bytes of both the presented credential and configured credential with SHA-256, then compare the fixed-size digests with `CryptographicOperations.FixedTimeEquals`. Tests cover malformed schemes, duplicates, empty values, different lengths, and exact matches.
+
+- [ ] **Step 4: Implement bounded upload reading**
+
+`LimitedRequestBodyReader.ReadAsync(Stream, 52_428_800, cancellationToken)` reads in pooled chunks, rejects zero bytes, throws `PayloadTooLargeException` as soon as byte 52,428,801 is observed, and returns the exact bytes. Tests use streams with absent, false-small, exact, and false-large lengths; request `Content-Length` above the maximum is rejected before reading.
+
+- [ ] **Step 5: Map creation with fixed contract and rate limiting**
+
+Bind:
+
+```csharp
+public sealed class HandoffRelayOptions
+{
+    public bool UploadsEnabled { get; init; }
+    public required Uri PublicOrigin { get; init; }
+    public string UploadCredential { get; init; } = "";
+    public int MaximumUploadBytes { get; init; } = 52_428_800;
+    public TimeSpan Lifetime { get; init; } = TimeSpan.FromMinutes(10);
+}
+```
+
+Startup validation requires `PublicOrigin` to equal `https://pacetracking.tqaentry.com` and contain only an origin. It requires a credential only when enabled and refuses configured maximum or lifetime values that differ from the frozen constants. Apply a named global fixed-window policy of 10 upload attempts per minute with zero queued requests; exhausted permits return `429`. Authenticate, rate-limit, and validate media type before reading. Create the token, capture `now` once, insert the hash/content with `expiresAt = now.AddMinutes(10)`, and return the absolute payload URL with `Cache-Control: no-store`.
+
+- [ ] **Step 6: Suppress sensitive request data before logging**
+
+Disable the framework request-start/request-finish and HTTP logging categories that emit raw request targets. Add one safe endpoint-aware middleware that records only method, the literal route template, status class, and aggregate byte count for `/api/handoffs`; it records only the literal `/open` path without a query. `Authorization` is never an allowed header. Never log the concrete GET path, raw request target, response body, exception parameters, token, hash, URL, name, signature, or GPX.
+
+- [ ] **Step 7: Run focused and server tests**
+
+Run:
+
+```bash
+dotnet test tests/RoutePacer.Server.Tests --filter "FullyQualifiedName~HandoffCreationTests|FullyQualifiedName~UploadCredentialVerifierTests|FullyQualifiedName~LimitedRequestBodyReaderTests"
+dotnet test tests/RoutePacer.Server.Tests
+```
+
+Expected: PASS.
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add src/RoutePacer.Server tests/RoutePacer.Server.Tests
+git commit -m "feat: accept authenticated GPX relay uploads"
+```
+
+### Task 10: Implement One-Time Consumption and Expiry Cleanup
+
+**Files:**
+- Create: `src/RoutePacer.Server/Handoffs/HandoffCleanupService.cs`
+- Modify: `src/RoutePacer.Server/Handoffs/HandoffEndpoints.cs`
+- Modify: `src/RoutePacer.Server/Program.cs`
+- Create: `tests/RoutePacer.Server.Tests/Handoffs/HandoffConsumptionTests.cs`
+- Create: `tests/RoutePacer.Server.Tests/Handoffs/HandoffCleanupServiceTests.cs`
+- Modify: `tests/RoutePacer.Persistence.Tests/Handoffs/PostgresHandoffStoreTests.cs`
+- Create: `tests/RoutePacer.Persistence.Tests/Handoffs/HandoffReplicaTests.cs`
+
+**Interfaces:**
+- Consumes: `IHandoffStore.ConsumeAsync` and `DeleteExpiredAsync`, `TimeProvider`.
+- Produces: anonymous `GET /api/handoffs/{token}` and periodic expired-row deletion.
+
+- [ ] **Step 1: Write failing consumption header and safe-404 tests**
+
+```csharp
+[Fact]
+public async Task First_get_returns_exact_bytes_and_required_headers_then_second_get_is_404()
+{
+    var token = await CreateStoredHandoffAsync("<gpx>exact</gpx>");
+
+    var first = await Client.GetAsync($"/api/handoffs/{token}");
+    var second = await Client.GetAsync($"/api/handoffs/{token}");
+
+    Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+    Assert.Equal("<gpx>exact</gpx>", await first.Content.ReadAsStringAsync());
+    Assert.Equal("application/gpx+xml", first.Content.Headers.ContentType!.MediaType);
+    Assert.Equal(first.Content.Headers.ContentLength, (await first.Content.ReadAsByteArrayAsync()).Length);
+    Assert.Equal("no-store", first.Headers.CacheControl!.ToString());
+    Assert.Contains("no-cache", first.Headers.Pragma.ToString());
+    Assert.Equal("nosniff", first.Headers.GetValues("X-Content-Type-Options").Single());
+    Assert.Equal(HttpStatusCode.NotFound, second.StatusCode);
+}
+```
+
+Assert malformed, unknown, expired, and consumed tokens have the same status, content length, media headers, and body.
+
+- [ ] **Step 2: Write failing real-PostgreSQL concurrency and durability tests**
+
+Start one PostgreSQL Testcontainer, construct two independent service providers/contexts, race two `ConsumeAsync` calls behind a barrier, and assert one exact byte array, one `null`, and zero rows. Restart the PostgreSQL container and prove an unexpired row remains consumable. Insert through one store instance and consume through another to prove replica sharing.
+
+- [ ] **Step 3: Run tests to verify failure**
+
+Run:
+
+```bash
+dotnet test tests/RoutePacer.Persistence.Tests --filter FullyQualifiedName~HandoffReplicaTests
+dotnet test tests/RoutePacer.Server.Tests --filter FullyQualifiedName~HandoffConsumptionTests
+```
+
+Expected: FAIL because GET and cleanup are absent.
+
+- [ ] **Step 4: Map anonymous atomic consumption**
+
+Reject a token before repository access unless it matches `^[A-Za-z0-9_-]{43}$`. Hash the decoded 32 bytes, capture `now` once, and call `ConsumeAsync`. Return the successful exact byte array with the frozen headers. Return one shared empty `404` response for every other result. Add no cache, redirect, or caller identity behavior.
+
+- [ ] **Step 5: Implement expiry cleanup**
+
+`HandoffCleanupService` runs on startup and then at a one-minute maximum interval using `TimeProvider.CreateTimer`. Each iteration calls `DeleteExpiredAsync(now)` and records only the aggregate deleted-row count. Cancellation stops promptly. A cleanup failure logs only a fixed event ID and exception type, then retries on the next interval.
+
+- [ ] **Step 6: Run concurrency, cleanup, and API tests**
+
+Run:
+
+```bash
+dotnet test tests/RoutePacer.Persistence.Tests --filter "FullyQualifiedName~PostgresHandoffStoreTests|FullyQualifiedName~HandoffReplicaTests"
+dotnet test tests/RoutePacer.Server.Tests --filter "FullyQualifiedName~HandoffConsumptionTests|FullyQualifiedName~HandoffCleanupServiceTests"
+```
+
+Expected: PASS; the concurrent case reports exactly one success on repeated runs.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add src/RoutePacer.Server/Handoffs src/RoutePacer.Server/Program.cs tests/RoutePacer.Server.Tests tests/RoutePacer.Persistence.Tests
+git commit -m "feat: consume relay handoffs exactly once"
+```
+
+### Task 11: Implement RouteTimer Contract v1 Intake
 
 **Files:**
 - Create: `docs/contracts/route-timer-invocation-v1.md`
+- Create: `docs/contracts/fixtures/route-timer-contract-v1.json`
 - Create: `src/RoutePacer.App/Invocation/InvocationRequest.cs`
 - Create: `src/RoutePacer.App/Invocation/InvocationParser.cs`
+- Create: `src/RoutePacer.App/Invocation/InvocationCanonicalizer.cs`
 - Create: `src/RoutePacer.App/Invocation/IInvocationVerifier.cs`
 - Create: `src/RoutePacer.App/Invocation/WebCryptoInvocationVerifier.cs`
+- Create: `src/RoutePacer.App/Invocation/BoundedReadStream.cs`
+- Create: `src/RoutePacer.App/Invocation/HandoffPayloadClient.cs`
+- Create: `src/RoutePacer.App/Invocation/IInvocationSettingsProvider.cs`
+- Create: `src/RoutePacer.App/Invocation/ServerInvocationSettingsProvider.cs`
 - Create: `src/RoutePacer.App/Invocation/RouteTimerInvocationService.cs`
 - Create: `src/RoutePacer.App/Pages/Open.razor`
 - Create: `src/RoutePacer.App/wwwroot/js/invocation.js`
 - Modify: `src/RoutePacer.App/Program.cs`
+- Create: `src/RoutePacer.Server/Configuration/RouteTimerInvocationOptions.cs`
+- Create: `src/RoutePacer.Server/Configuration/ClientConfigurationEndpoints.cs`
+- Modify: `src/RoutePacer.Server/Program.cs`
 - Create: `tests/RoutePacer.App.Tests/Invocation/InvocationParserTests.cs`
+- Create: `tests/RoutePacer.App.Tests/Invocation/InvocationFixtureTests.cs`
+- Create: `tests/RoutePacer.App.Tests/Invocation/HandoffPayloadClientTests.cs`
 - Create: `tests/RoutePacer.App.Tests/Invocation/RouteTimerInvocationServiceTests.cs`
+- Create: `tests/RoutePacer.App.Tests/Pages/OpenTests.cs`
+- Create: `tests/RoutePacer.Server.Tests/Configuration/ClientConfigurationEndpointTests.cs`
 
 **Interfaces:**
-- Consumes: `RouteCatalogService`, `HttpClient`, `TimeProvider`, browser history API.
-- Produces: `InvocationRequest(string Source, int Version, Uri PayloadUri, string? Name, long IssuedUnixMilliseconds, string Signature)`; `IInvocationVerifier.VerifyAsync(InvocationRequest, CancellationToken)`; `/open` import-to-ready flow.
+- Consumes: `RouteCatalogService`, same-origin `HttpClient`, `TimeProvider`, server runtime configuration, browser Web Crypto and history APIs.
+- Produces: public `GET /api/config/route-timer-invocation`, `InvocationRequest(Uri PayloadUri, string Name, long IssuedUnixMilliseconds, string Signature)`, `InvocationCanonicalizer.GetBytes`, `IInvocationVerifier.VerifyAsync`, `HandoffPayloadClient.FetchOnceAsync`, and the `/open` import-to-ready flow.
 
-- [ ] **Step 1: Freeze the interoperable contract in a checked-in document**
+- [ ] **Step 1: Freeze the exact contract and shared fixture schema**
 
-Specify this canonical signed byte sequence with UTF-8 encoding:
+Document required query keys exactly once, exact origin/path rules, 10-minute past and 60-second future bounds, and these UTF-8 bytes with no trailing line feed:
 
 ```text
 rt\n1\n{payload-absolute-uri}\n{name-or-empty}\n{unix-milliseconds}
 ```
 
-Use ECDSA P-256 with SHA-256 and base64url IEEE-P1363 signature bytes. RouteTimer owns the private key; RoutePacer embeds only the public JWK. This replaces a shared HMAC secret because any secret shipped in WebAssembly is public. The payload must be an absolute HTTPS URL on an allowlisted RouteTimer host, return `application/gpx+xml`, be at most 50 MB, and may be consumed once. Include one fixed signed valid query and one tampered fixture for cross-repository contract tests.
+The JSON fixture has exact properties `fixtureVersion`, `publicJwk`, `canonicalText`, `payloadUrl`, `name`, `timestamp`, `signature`, and `invocationUrl`. Generate one test-only P-256 key pair, record a fixed P1363 valid signature, derive tampered cases without altering the valid fixture, and copy the identical JSON bytes to RouteTimer's corresponding test fixture when its implementation task runs.
 
-- [ ] **Step 2: Write failing parse, expiry, tamper, and import tests**
+- [ ] **Step 2: Write failing strict parser and canonicalization tests**
 
-Test missing/duplicate query keys, `src != rt`, `v != 1`, malformed timestamp/signature, more than 10 minutes old, more than 60 seconds in the future, non-HTTPS payload, disallowed host, invalid signature, non-GPX content type, oversized download, one fetch only, successful persistence, navigation to `/track/{routeId}?ready=1`, and URL cleanup via `history.replaceState({}, "", "/open")` after terminal success or failure.
-
-- [ ] **Step 3: Implement strict parsing and public-key verification**
+Cover each missing and duplicate key, additional keys, wrong `src`/`v`, empty non-name fields, invalid percent escapes, invalid timestamp/signature encoding, more than 10 minutes old, exactly 10 minutes old, more than 60 seconds future, exactly 60 seconds future, HTTP, foreign origin, user info, query/fragment, wrong path, padded/wrong-length token, Unicode names, reserved characters, and empty name.
 
 ```csharp
-public interface IInvocationVerifier
+[Fact]
+public void Canonicalizer_has_line_feeds_between_fields_and_none_at_end()
 {
-    ValueTask<bool> VerifyAsync(
-        InvocationRequest request, CancellationToken cancellationToken = default);
+    var bytes = InvocationCanonicalizer.GetBytes(Request(
+        "https://pacetracking.tqaentry.com/api/handoffs/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "Café & climb", 1787832000000));
+
+    Assert.Equal("rt\n1\nhttps://pacetracking.tqaentry.com/api/handoffs/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\nCafé & climb\n1787832000000",
+        Encoding.UTF8.GetString(bytes));
 }
 ```
 
-`invocation.js` imports the configured public JWK with `crypto.subtle.importKey`, converts base64url signature bytes, and calls `crypto.subtle.verify({ name: "ECDSA", hash: "SHA-256" }, key, signature, canonicalBytes)`. No private or symmetric signing material is stored in RoutePacer.
+- [ ] **Step 3: Run parser tests to verify failure**
 
-- [ ] **Step 4: Implement download and shared import orchestration**
+Run: `dotnet test tests/RoutePacer.App.Tests --filter "FullyQualifiedName~InvocationParserTests|FullyQualifiedName~InvocationFixtureTests"`
 
-Use `HttpCompletionOption.ResponseHeadersRead`, require a successful response and `application/gpx+xml` or `application/octet-stream`, reject `Content-Length > 52_428_800`, wrap the response stream in a counting stream for missing/false lengths, and pass it to `RouteCatalogService.ImportAsync` as `<name>.gpx`. Map failures to explicit user messages while logging only error code, source, version, and host—never the token, signature, query string, or GPX bytes.
+Expected: FAIL because parser, canonicalizer, and verifier are absent.
 
-- [ ] **Step 5: Implement `/open` states and fallback**
+- [ ] **Step 4: Implement strict parse and Web Crypto verification**
 
-Render `Importing route from RouteTimer…`, the imported name/distance plus `Start ride`, or `Could not import shared route: {safe reason}` with `Retry` and `Choose GPX file`. Retry reuses the in-memory parsed request only before a payload is successfully consumed. Cleanup the address bar after parsing so refresh cannot re-import.
+Parse the raw query without collapsing duplicates. Require the exact six-key set, percent-decode once, and compare the normalized scheme, host, and effective port to `https://pacetracking.tqaentry.com`. In `invocation.js`, import only an EC JWK with `crv=P-256`, decode unpadded base64url P1363 signature bytes, and call `crypto.subtle.verify({ name: "ECDSA", hash: "SHA-256" }, key, signature, canonicalBytes)`. No private or symmetric material is accepted.
 
-- [ ] **Step 6: Register configuration and services**
+- [ ] **Step 5: Write failing media-type, bounded-read, and one-fetch tests**
 
-Add non-secret settings to `wwwroot/appsettings.json`:
+Test missing/false-small/oversized `Content-Length`, exact 52,428,800-byte success, streamed byte 52,428,801 failure, any content type except exactly `application/gpx+xml`, non-success status, one GET on success, no automatic second GET after a response begins, exact byte preservation, and cancellation.
 
-```json
+- [ ] **Step 6: Implement one-fetch payload client and orchestration**
+
+Use `HttpCompletionOption.ResponseHeadersRead`, require `application/gpx+xml`, validate declared length, and wrap the response stream in `BoundedReadStream(52_428_800)`. `RouteTimerInvocationService` validates and verifies before GET, then calls the existing `RouteCatalogService.ImportAsync` as a `.gpx` source and waits for transactional IndexedDB persistence before reporting ready. Retry is permitted only for a failure proven to precede GET dispatch; after dispatch, return a terminal safe error requiring a new code or manual GPX.
+
+- [ ] **Step 7: Implement `/open` states and immediate URL cleanup**
+
+Render validating/downloading/importing progress, route name/distance plus `Start ride`, or `Could not import shared route` with safe recovery copy and manual file selection. Call `history.replaceState({}, "", "/open")` after terminal success or failure. Never render rejected values or log the query, name, signature, URL, token, host, or GPX.
+
+- [ ] **Step 8: Register disabled-by-default runtime public configuration**
+
+Bind server-side environment/configuration to:
+
+```csharp
+public sealed class RouteTimerInvocationOptions
 {
-  "RouteTimerInvocation": {
-    "Enabled": false,
-    "AllowedPayloadHosts": ["routetimer.tqaentry.com"],
-    "MaximumAgeMinutes": 10,
-    "PublicKeyJwk": ""
-  }
+    public bool Enabled { get; init; }
+    public string PublicKeyJwk { get; init; } = "";
 }
 ```
 
-Bind and validate settings at startup: an empty key is valid only while `Enabled` is `false`; enabling intake without a valid P-256 public JWK must fail startup. Tests generate a fixed fixture key pair. The coordinated rollout in Task 16 exports RouteTimer's real public JWK into the production configuration and changes `Enabled` to `true`; implementation must not invent signing material or ship a symmetric secret.
+Tracked server settings default to disabled and an empty JWK. `GET /api/config/route-timer-invocation` returns only `{ "enabled": false }` while disabled or `{ "enabled": true, "publicKeyJwk": <object> }` while enabled, always with `Cache-Control: no-store`. Enabling intake with an absent, malformed, private (`d` present), non-EC, or non-P-256 JWK fails server startup. The client obtains this public configuration before verification. The origin, maximum age, future skew, route path, media type, and byte limit are code constants from the frozen contract, not mutable settings.
 
-- [ ] **Step 7: Run invocation tests**
+- [ ] **Step 9: Run invocation and component tests**
 
 Run:
 
 ```bash
 dotnet test tests/RoutePacer.App.Tests --filter FullyQualifiedName~Invocation
-dotnet build RoutePacer.slnx
+dotnet test tests/RoutePacer.App.Tests --filter FullyQualifiedName~OpenTests
+dotnet test tests/RoutePacer.Server.Tests --filter FullyQualifiedName~ClientConfigurationEndpointTests
+rg -n "PRIVATE KEY|RelayUpload|UploadCredential" src/RoutePacer.App/wwwroot
 ```
 
-Expected: PASS; no signing secret appears in `src/RoutePacer.App/wwwroot`.
+Expected: tests PASS; repository scan returns no matches.
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 10: Commit**
 
 ```bash
-git add docs/contracts src/RoutePacer.App/Invocation src/RoutePacer.App/Pages/Open.razor src/RoutePacer.App/wwwroot/js/invocation.js src/RoutePacer.App/wwwroot/appsettings.json src/RoutePacer.App/Program.cs tests/RoutePacer.App.Tests/Invocation
-git commit -m "feat: accept secure RouteTimer route handoffs"
+git add docs/contracts src/RoutePacer.App/Invocation src/RoutePacer.App/Pages/Open.razor src/RoutePacer.App/wwwroot/js/invocation.js src/RoutePacer.App/Program.cs src/RoutePacer.Server/Configuration src/RoutePacer.Server/Program.cs tests/RoutePacer.App.Tests tests/RoutePacer.Server.Tests/Configuration
+git commit -m "feat: import signed RouteTimer relay handoffs"
 ```
 
-### Task 9: Implement Spatial Route Matching
+### Task 12: Implement Spatial Route Matching
 
 **Files:**
 - Create: `src/RoutePacer.Core/Tracking/RouteMatcher.cs`
@@ -785,7 +1175,7 @@ git add src/RoutePacer.Core/Tracking tests/RoutePacer.Core.Tests/Tracking
 git commit -m "feat: match live positions to route segments"
 ```
 
-### Task 10: Implement Time and Distance Pacing
+### Task 13: Implement Time and Distance Pacing
 
 **Files:**
 - Create: `src/RoutePacer.Core/Tracking/PacingService.cs`
@@ -843,7 +1233,7 @@ git add src/RoutePacer.Core/Tracking tests/RoutePacer.Core.Tests/Tracking
 git commit -m "feat: calculate route time and distance lead lag"
 ```
 
-### Task 11: Bridge GPS and Wake Lock Browser Capabilities
+### Task 14: Bridge GPS and Wake Lock Browser Capabilities
 
 **Files:**
 - Create: `src/RoutePacer.App/Browser/ILocationService.cs`
@@ -907,7 +1297,7 @@ git add src/RoutePacer.App/Browser src/RoutePacer.App/wwwroot/js/gps.js src/Rout
 git commit -m "feat: add GPS and wake lock browser bridges"
 ```
 
-### Task 12: Record and Recover Ride Sessions
+### Task 15: Record and Recover Ride Sessions
 
 **Files:**
 - Create: `src/RoutePacer.App/Rides/RideSessionState.cs`
@@ -962,7 +1352,7 @@ git add src/RoutePacer.App/Rides src/RoutePacer.App/Program.cs tests/RoutePacer.
 git commit -m "feat: record resilient offline ride sessions"
 ```
 
-### Task 13: Build the Live Tracker Dashboard
+### Task 16: Build the Live Tracker Dashboard
 
 **Files:**
 - Create: `src/RoutePacer.App/Pages/Track.razor`
@@ -1017,7 +1407,7 @@ git add src/RoutePacer.App/Pages/Track.razor src/RoutePacer.App/Components src/R
 git commit -m "feat: add live pacing dashboard"
 ```
 
-### Task 14: Add Ride History, Detail, and Explicit Deletion
+### Task 17: Add Ride History, Detail, and Explicit Deletion
 
 **Files:**
 - Create: `src/RoutePacer.App/Pages/Rides.razor`
@@ -1068,7 +1458,7 @@ git add src/RoutePacer.App/Pages src/RoutePacer.App/Components src/RoutePacer.Ap
 git commit -m "feat: add local ride history and deletion"
 ```
 
-### Task 15: Harden the PWA Shell and Prove Offline Operation
+### Task 18: Harden the PWA Shell and Prove Offline Operation
 
 **Files:**
 - Modify: `src/RoutePacer.App/wwwroot/manifest.webmanifest`
@@ -1079,7 +1469,7 @@ git commit -m "feat: add local ride history and deletion"
 - Create: `src/RoutePacer.App/wwwroot/icons/icon-512.png`
 - Create: `tests/RoutePacer.E2E/OfflinePwaTests.cs`
 - Create: `tests/RoutePacer.E2E/TrackingCapabilityTests.cs`
-- Create: `tests/RoutePacer.E2E/RouteTimerInvocationTests.cs`
+- Create: `tests/RoutePacer.E2E/RouteTimerInvocationBrowserTests.cs`
 - Create: `tests/RoutePacer.E2E/Fixtures/timed-route.gpx`
 - Create: `docs/manual-validation.md`
 
@@ -1089,15 +1479,15 @@ git commit -m "feat: add local ride history and deletion"
 
 - [ ] **Step 1: Write failing Playwright acceptance tests**
 
-Create tests that publish and serve the app, load it once online, import a route, set the browser context offline, reload `/routes`, verify the route remains, start a mocked-geolocation ride, push two positions, stop, reload `/rides`, and verify persistence. Add invocation success/failure tests with a local signed-payload server and URL cleanup assertion.
+Create tests that publish and serve `RoutePacer.Server`, load it once online, import a route, set the browser context offline, reload `/routes`, verify the route remains, start a mocked-geolocation ride, push two positions, stop, reload `/rides`, and verify persistence. For invocation, use the same-origin relay test host and fixed Contract v1 fixture; prove signature verification, exact GPX import, one GET, immediate second-fetch `404`, URL cleanup, and ready-to-start navigation.
 
 - [ ] **Step 2: Run the E2E tests to verify failure**
 
 Run:
 
 ```bash
-dotnet build src/RoutePacer.App/RoutePacer.App.csproj -c Release
-dotnet test tests/RoutePacer.E2E --filter "FullyQualifiedName~OfflinePwaTests|FullyQualifiedName~TrackingCapabilityTests|FullyQualifiedName~RouteTimerInvocationTests"
+dotnet build src/RoutePacer.Server/RoutePacer.Server.csproj -c Release
+dotnet test tests/RoutePacer.E2E --filter "FullyQualifiedName~OfflinePwaTests|FullyQualifiedName~TrackingCapabilityTests|FullyQualifiedName~RouteTimerInvocationBrowserTests"
 ```
 
 Expected: FAIL until cache policy, icons, and browser harness are complete.
@@ -1108,7 +1498,7 @@ Set `name` to `RoutePacer`, `short_name` to `RoutePacer`, `start_url` to `/`, `s
 
 - [ ] **Step 4: Implement safe cache upgrades**
 
-Use a versioned cache prefix, precache the generated Blazor asset manifest, delete only old RoutePacer caches on activate, serve navigation from cached `index.html` on network failure, and use stale-while-revalidate for same-origin static GET assets. Never cache `/open` query strings, RouteTimer payload responses, or non-GET requests.
+Use a versioned cache prefix, precache the generated Blazor asset manifest, delete only old RoutePacer caches on activate, serve navigation from cached `index.html` on network failure, and use stale-while-revalidate for same-origin static GET assets. Bypass `/api`, `/health`, every `/open` navigation containing a query, and every non-GET request; never call `cache.put` for those requests or their responses.
 
 - [ ] **Step 5: Add failure and capability browser cases**
 
@@ -1129,7 +1519,7 @@ In `docs/manual-validation.md`, record exact steps and pass/fail spaces for:
 Run:
 
 ```bash
-dotnet publish src/RoutePacer.App/RoutePacer.App.csproj -c Release
+dotnet publish src/RoutePacer.Server/RoutePacer.Server.csproj -c Release
 dotnet test RoutePacer.slnx -c Release --no-restore
 ```
 
@@ -1142,7 +1532,144 @@ git add src/RoutePacer.App/wwwroot tests/RoutePacer.E2E docs/manual-validation.m
 git commit -m "test: verify installable offline RoutePacer PWA"
 ```
 
-### Task 16: Add Performance Regression Coverage and Release Documentation
+### Task 19: Add Container, Health, Caddy, and Forward-Only Deployment
+
+**Files:**
+- Create: `Dockerfile`
+- Create: `.dockerignore`
+- Create: `.github/workflows/publish-container.yml`
+- Create: `deploy/docker-compose.yml`
+- Create: `deploy/docker-compose.local.yml`
+- Create: `deploy/.env.example`
+- Create: `deploy/caddy/routepacer.caddy`
+- Create: `deploy/README.md`
+- Create: `src/RoutePacer.Server/Health/MigrationState.cs`
+- Create: `src/RoutePacer.Server/Health/DatabaseMigrationService.cs`
+- Create: `src/RoutePacer.Server/Health/MigrationsReadyHealthCheck.cs`
+- Modify: `src/RoutePacer.Server/Program.cs`
+- Create: `tests/RoutePacer.Server.Tests/Health/HealthEndpointTests.cs`
+- Create: `tests/RoutePacer.Server.Tests/Health/DatabaseMigrationServiceTests.cs`
+- Create: `tests/RoutePacer.E2E/DeploymentConfigurationTests.cs`
+- Create: `tests/RoutePacer.E2E/SensitiveLoggingTests.cs`
+- Create: `tests/RoutePacer.E2E/ProductionLikeHandoffTests.cs`
+
+**Interfaces:**
+- Consumes: completed hosted application, PostgreSQL migration, relay and intake feature controls.
+- Produces: multi-arch container image, dedicated internal PostgreSQL deployment, migration-gated `/health/ready`, shared-Caddy route, forward-only deployment runbook, and production-like acceptance test.
+
+- [ ] **Step 1: Write failing health and deployment-shape tests**
+
+Health tests require anonymous `/health/live` to return `200` when the process runs and `/health/ready` to return `503` until PostgreSQL is reachable and migrations complete, then `200`. Deployment tests parse `docker compose config --format json` and assert:
+
+```csharp
+Assert.False(Service("routepacer-db").TryGetProperty("ports", out _));
+Assert.False(Service("routepacer").TryGetProperty("ports", out _));
+Assert.Equal(true, Network("routepacer-private").GetProperty("internal").GetBoolean());
+Assert.Contains("routepacer-private", ServiceNetworks("routepacer-db"));
+Assert.DoesNotContain("mcp-public", ServiceNetworks("routepacer-db"));
+Assert.Contains("mcp-public", ServiceNetworks("routepacer"));
+```
+
+Also assert the Compose file defines one named PostgreSQL volume, no backup service, disabled upload/intake defaults, a PostgreSQL health dependency, and an app readiness healthcheck.
+
+- [ ] **Step 2: Run health and deployment tests to verify failure**
+
+Run:
+
+```bash
+dotnet test tests/RoutePacer.Server.Tests --filter FullyQualifiedName~Health
+dotnet test tests/RoutePacer.E2E --filter FullyQualifiedName~DeploymentConfigurationTests
+```
+
+Expected: FAIL because health services and deployment files are absent.
+
+- [ ] **Step 3: Implement serialized startup migration and health endpoints**
+
+`DatabaseMigrationService.StartAsync` opens PostgreSQL, acquires a fixed application advisory lock, applies `MigrateAsync`, sets `MigrationState.IsComplete = true`, and releases the lock. Failure leaves readiness unhealthy and stops startup. Register database and migration readiness checks tagged `ready`, then map:
+
+```csharp
+app.MapHealthChecks("/health/live", new HealthCheckOptions
+{
+    Predicate = _ => false,
+    ResponseWriter = static (context, _) => context.Response.WriteAsync("Healthy")
+});
+app.MapHealthChecks("/health/ready", new HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("ready"),
+    ResponseWriter = static (context, _) => context.Response.WriteAsync("Healthy")
+});
+```
+
+- [ ] **Step 4: Build the container image**
+
+Use `mcr.microsoft.com/dotnet/sdk:10.0` to restore and publish `RoutePacer.Server`, then copy into `mcr.microsoft.com/dotnet/aspnet:10.0`. Run as a non-root user, expose 8080, set `ASPNETCORE_HTTP_PORTS=8080`, and add `HEALTHCHECK CMD curl -f http://127.0.0.1:8080/health/ready || exit 1`. `.dockerignore` excludes `.git`, build outputs, test results, deployment secrets, GPX/FIT files, and local environment files.
+
+- [ ] **Step 5: Create production and local Compose definitions**
+
+Production uses `postgres:16-alpine`, `restart: unless-stopped`, the named `routepacer_postgres` volume, `routepacer-private` with `internal: true`, and external `mcp-public`. `routepacer` pulls `ghcr.io/jamiemitchellconsultants/routepacer:${ROUTEPACER_IMAGE_TAG:-latest}`, waits for database health, applies migrations, and receives runtime values only through environment variables:
+
+```yaml
+ConnectionStrings__RoutePacer: Host=routepacer-db;Database=${ROUTEPACER_DB_NAME:-routepacer};Username=${ROUTEPACER_DB_USER:-routepacer};Password=${ROUTEPACER_DB_PASSWORD:?set ROUTEPACER_DB_PASSWORD}
+Database__ApplyMigrations: "true"
+HandoffRelay__UploadsEnabled: ${ROUTEPACER_RELAY_UPLOADS_ENABLED:-false}
+HandoffRelay__PublicOrigin: https://pacetracking.tqaentry.com
+HandoffRelay__UploadCredential: ${ROUTEPACER_RELAY_UPLOAD_KEY:-}
+RouteTimerInvocation__Enabled: ${ROUTEPACER_ROUTE_TIMER_INTAKE_ENABLED:-false}
+RouteTimerInvocation__PublicKeyJwk: ${ROUTEPACER_ROUTE_TIMER_PUBLIC_JWK:-}
+```
+
+Local Compose follows the same two-service topology but publishes the app only on `127.0.0.1:${ROUTEPACER_PORT:-49216}:8080`, uses documented local-only database credentials, and keeps both handoff features disabled.
+
+- [ ] **Step 6: Add Caddy routing with sensitive access logs disabled**
+
+Create:
+
+```caddyfile
+# Copy to the shared Caddy conf.d directory, validate, then reload Caddy.
+pacetracking.tqaentry.com {
+    log {
+        output discard
+    }
+    reverse_proxy routepacer:8080
+}
+```
+
+The complete Caddy configuration must validate before reload. Discard site access logs so `/api/handoffs/{token}` and `/open?...` can never reach ingress logs; aggregate relay metrics come from safe application counters.
+
+- [ ] **Step 7: Write the forward-only deployment runbook**
+
+`deploy/README.md` mirrors RouteTimer's numbered style: provision the database password, relay upload key, and public JWK outside source control; leave both RoutePacer controls and RouteTimer handoff disabled; set immutable `ROUTEPACER_IMAGE_TAG`; run `docker compose -f deploy/docker-compose.yml up -d --pull always --wait`; copy/validate/reload the Caddy fragment; curl public readiness; run fixtures and smoke tests; enable RoutePacer intake and uploads; then enable RouteTimer. State explicitly that the relay database has no backup, restore, or rollback procedure. Failures are corrected forward and redeployed; the disposable database may be recreated.
+
+- [ ] **Step 8: Add captured-log and production-like tests**
+
+Send a canary credential, token, payload URL, signed query, route name, and GPX marker through success and failure paths while capturing application logs. Assert none appear. The production-like test starts private-only RouteTimer, public-context RoutePacer plus PostgreSQL, uploads outbound, opens the signed URL in a phone-sized Playwright context, verifies exact IndexedDB import and ready state, queries PostgreSQL for zero rows, and asserts a direct second GET is `404`.
+
+- [ ] **Step 9: Add container publishing workflow**
+
+On pushes to `main` and version tags, restore, build, test, build `linux/amd64` and `linux/arm64`, and publish GHCR tags `latest`, commit SHA, and semantic version only after all gates pass. Grant only `contents: read` and `packages: write`.
+
+- [ ] **Step 10: Verify deployment artifacts**
+
+Run:
+
+```bash
+ROUTEPACER_DB_PASSWORD=test ROUTEPACER_RELAY_UPLOAD_KEY=test-only ROUTEPACER_ROUTE_TIMER_PUBLIC_JWK='{}' docker compose -f deploy/docker-compose.yml config --quiet
+docker compose -f deploy/docker-compose.local.yml config --quiet
+docker build -t routepacer:test .
+dotnet test tests/RoutePacer.Server.Tests --filter FullyQualifiedName~Health
+dotnet test tests/RoutePacer.E2E --filter "FullyQualifiedName~DeploymentConfigurationTests|FullyQualifiedName~SensitiveLoggingTests|FullyQualifiedName~ProductionLikeHandoffTests"
+```
+
+Expected: Compose and image build exit `0`; tests PASS; database has no published port or backup service.
+
+- [ ] **Step 11: Commit**
+
+```bash
+git add Dockerfile .dockerignore .github/workflows/publish-container.yml deploy src/RoutePacer.Server/Health src/RoutePacer.Server/Program.cs tests/RoutePacer.Server.Tests/Health tests/RoutePacer.E2E
+git commit -m "deploy: host RoutePacer relay behind Caddy"
+```
+
+### Task 20: Add Performance Regression Coverage and Release Documentation
 
 **Files:**
 - Create: `tests/RoutePacer.Core.Tests/Performance/RouteMatcherPerformanceTests.cs`
@@ -1173,25 +1700,26 @@ Expected: PASS on the development machine. If CI hardware differs, preserve the 
 
 - [ ] **Step 3: Document architecture and privacy**
 
-`docs/architecture.md` must describe project boundaries, import normalization, IndexedDB schema/versioning, match/pacing formulas and signs, session transitions, and offline cache exclusions. `docs/privacy.md` must state that location/routes/rides remain on-device, list browser permissions, describe delete actions, and state that RouteTimer payload bytes are fetched only during explicit handoff.
+`docs/architecture.md` describes hosted project boundaries, relay request flow, atomic `DELETE ... RETURNING`, import normalization, IndexedDB schema/versioning, matching/pacing formulas, session transitions, and cache exclusions. `docs/privacy.md` states that manual imports, imported routes, rides, and tracking remain on-device; an explicit RouteTimer handoff temporarily processes readable route/location data in PostgreSQL for at most 10 minutes; successful consumption deletes immediately; expired rows are cleaned automatically; TLS protects transit; and no relay backup exists.
 
 - [ ] **Step 4: Document the coordinated RouteTimer rollout**
 
-Sequence deployment as: publish RoutePacer with RouteTimer button disabled; publish the matching RouteTimer payload endpoint and ECDSA signer; run the shared valid/tampered fixtures against production-like origins; enable the button; monitor only aggregate server response codes without route/token contents. Explicitly note that RouteTimer's earlier HMAC plan must be updated to ECDSA P-256 before production enablement.
+Sequence deployment as: publish RoutePacer with relay uploads and intake disabled; provision the shared upload credential and RouteTimer P-256 key; configure RoutePacer with only the public JWK; configure private RouteTimer with the upload credential and private key while its handoff stays disabled; run shared fixtures and the production-like private-to-public flow; enable RoutePacer intake and uploads; then enable RouteTimer. Include exact readiness, first-fetch, immediate-row-deletion, second-fetch-`404`, expiry, manual-fallback, and real-phone QR smoke steps. State that there is no rollback, backup, or restore procedure.
 
 - [ ] **Step 5: Run final repository checks**
 
 Run:
 
 ```bash
-rg -n "SigningKey|HMACSHA|private key" src/RoutePacer.App/wwwroot
+rg -n "PRIVATE KEY|HMACSHA|UploadCredential|RelayUpload" src/RoutePacer.App/wwwroot
+rg -n "route name canary|gpx log canary|payload token canary|relay credential canary" artifacts/test-logs
 dotnet format RoutePacer.slnx --verify-no-changes
 dotnet build RoutePacer.slnx -c Release
 dotnet test RoutePacer.slnx -c Release --no-build
 git status --short
 ```
 
-Expected: the secret scan returns no matches; formatting, build, and tests pass; status contains only intentional documentation or generated Playwright artifacts that are either committed deliberately or ignored.
+Expected: both sensitive scans return no matches; formatting, build, and tests pass; status contains only intentional documentation or generated Playwright artifacts that are either committed deliberately or ignored.
 
 - [ ] **Step 6: Commit**
 
@@ -1206,19 +1734,21 @@ git commit -m "docs: complete RoutePacer release guidance"
 
 | Source requirement | Implemented and proven by |
 |---|---|
-| Installable PWA and offline startup | Tasks 1 and 15 |
+| Installable hosted PWA and offline startup | Tasks 1, 18, and 19 |
 | GPX and FIT import | Tasks 3–5 and 7 |
-| IndexedDB route/ride persistence | Tasks 6, 7, 12, and 14 |
-| Select route and start tracking | Tasks 7, 12, and 13 |
-| High-accuracy active-screen GPS | Tasks 11–13 |
-| Route projection and position | Task 9 |
-| Distance and time lead/lag | Tasks 10 and 13 |
-| Best-effort Wake Lock and recovery | Tasks 11, 13, and 15 |
-| Ride history available offline | Tasks 12, 14, and 15 |
-| RouteTimer auto-import-to-ready flow | Tasks 8 and 15 |
-| Distance-only fallback for untimed routes | Tasks 3, 10, 13, and 15 |
-| Local-only privacy and deletion | Tasks 6, 14, and 16 |
-| Large-route and long-ride stability | Tasks 9, 12, 15, and 16 |
+| IndexedDB route/ride persistence | Tasks 6, 7, 15, 17, and 18 |
+| Select route and start tracking | Tasks 7, 12, 13, and 16 |
+| High-accuracy active-screen GPS | Tasks 14–16 and 18 |
+| Route projection and position | Task 12 |
+| Distance and time lead/lag | Tasks 13 and 16 |
+| Best-effort Wake Lock and recovery | Tasks 14, 16, and 18 |
+| Ride history available offline | Tasks 15, 17, and 18 |
+| Authenticated short-lived relay | Tasks 8–10 and 19 |
+| RouteTimer auto-import-to-ready flow | Tasks 11, 18, and 19 |
+| Distance-only fallback for untimed routes | Tasks 3, 13, 16, and 18 |
+| Plaintext relay privacy and on-device retention after import | Tasks 8–11, 17, 19, and 20 |
+| Large-route and long-ride stability | Tasks 12, 15, 18, and 20 |
+| Docker/PostgreSQL/Caddy deployment | Task 19 |
 
 ## Deferred Enhancement
 
