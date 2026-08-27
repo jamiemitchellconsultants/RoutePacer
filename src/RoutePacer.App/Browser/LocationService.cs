@@ -37,14 +37,16 @@ public sealed class LocationService(IJSRuntime js) : ILocationService
 
     private sealed class LocationCallbacks(LocationService owner)
     {
-        [JSInvokable] public Task OnPosition(double timestamp, double latitude, double longitude, double accuracy, double? speed)
+        [JSInvokable]
+        public Task OnPosition(double timestamp, double latitude, double longitude, double accuracy, double? speed)
         {
             if (!double.IsFinite(timestamp) || !double.IsFinite(latitude) || !double.IsFinite(longitude) || !double.IsFinite(accuracy)) return Task.CompletedTask;
             if (speed is { } value && !double.IsFinite(value)) speed = null;
             return owner.onFix?.Invoke(new(DateTimeOffset.FromUnixTimeMilliseconds((long)timestamp), latitude, longitude, accuracy, speed)) ?? Task.CompletedTask;
         }
 
-        [JSInvokable] public Task OnError(int code) => owner.onError?.Invoke(code switch
+        [JSInvokable]
+        public Task OnError(int code) => owner.onError?.Invoke(code switch
         {
             0 => LocationFailure.Unsupported,
             1 => LocationFailure.PermissionDenied,
