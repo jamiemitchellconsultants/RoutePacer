@@ -7,9 +7,12 @@ public static class TrackInterpolator
     public static double? ElapsedAtDistance(RouteTrack route, double distance)
     {
         if (!route.HasTiming) return null;
-        var points = route.Points; var index = FindDistance(points, Math.Clamp(distance, 0, points[^1].DistanceFromStartMeters));
+        var points = route.Points;
+        // The clamped value must also drive the interpolation, or a lookup outside the route extrapolates.
+        var value = Math.Clamp(distance, 0, points[^1].DistanceFromStartMeters);
+        var index = FindDistance(points, value);
         if (index == points.Count - 1) return points[^1].ElapsedSeconds;
-        return Interpolate(points[index].DistanceFromStartMeters, points[index + 1].DistanceFromStartMeters, points[index].ElapsedSeconds!.Value, points[index + 1].ElapsedSeconds!.Value, distance);
+        return Interpolate(points[index].DistanceFromStartMeters, points[index + 1].DistanceFromStartMeters, points[index].ElapsedSeconds!.Value, points[index + 1].ElapsedSeconds!.Value, value);
     }
 
     public static double? DistanceAtElapsed(RouteTrack route, double elapsed)

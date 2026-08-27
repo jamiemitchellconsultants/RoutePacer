@@ -9,9 +9,12 @@
 
   <ItemGroup>
     <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="Microsoft.Playwright.Xunit" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
+    <ProjectReference Include="..\..\src\RoutePacer.Server\RoutePacer.Server.csproj" />
   </ItemGroup>
 
   <ItemGroup>
