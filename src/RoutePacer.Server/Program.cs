@@ -9,6 +9,16 @@ using RoutePacer.Server.Hosting;
 using System.Text.Json;
 using System.Threading.RateLimiting;
 
+// Container healthcheck. The aspnet runtime image has no curl, so the app probes its own readiness
+// endpoint and exits with the status Docker expects.
+if (args.Contains("--healthcheck"))
+{
+    var port = (Environment.GetEnvironmentVariable("ASPNETCORE_HTTP_PORTS") ?? "8080").Split(';')[0];
+    using var probe = new HttpClient { Timeout = TimeSpan.FromSeconds(4) };
+    try { return (await probe.GetAsync($"http://127.0.0.1:{port}/health/ready")).IsSuccessStatusCode ? 0 : 1; }
+    catch (Exception) { return 1; }
+}
+
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddOptions<HandoffRelayOptions>().Bind(builder.Configuration.GetSection("HandoffRelay"))
     .Validate(o => o.PublicOrigin == new Uri("https://pacetracking.tqaentry.com") && o.MaximumUploadBytes == 52_428_800 && o.Lifetime == TimeSpan.FromMinutes(10) && (!o.UploadsEnabled || !string.IsNullOrEmpty(o.UploadCredential)), "Relay settings do not match the fixed handoff contract.")
@@ -68,5 +78,6 @@ static bool IsPublicP256Jwk(string value)
 }
 
 app.Run();
+return 0;
 
 public partial class Program { }

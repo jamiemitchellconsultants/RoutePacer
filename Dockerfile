@@ -9,5 +9,7 @@ COPY --from=build /out .
 USER $APP_UID
 ENV ASPNETCORE_HTTP_PORTS=8080
 EXPOSE 8080
-HEALTHCHECK CMD curl -f http://127.0.0.1:8080/health/ready || exit 1
+# The aspnet runtime image does not ship curl, so probe with the runtime that is already present.
+HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=5 \
+  CMD ["dotnet", "RoutePacer.Server.dll", "--healthcheck"]
 ENTRYPOINT ["dotnet", "RoutePacer.Server.dll"]

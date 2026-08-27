@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Components.Web;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
 using RoutePacer.App;
 using RoutePacer.App.Browser;
@@ -35,4 +36,14 @@ builder.Services.AddScoped<IInvocationVerifier, WebCryptoInvocationVerifier>();
 builder.Services.AddScoped<HandoffPayloadClient>();
 builder.Services.AddScoped<RouteTimerInvocationService>();
 
-await builder.Build().RunAsync();
+var host = builder.Build();
+
+// Rides left Running or Paused by a crash, reload, or closed tab are finalised as Interrupted before the UI
+// renders. Recovery never resumes GPS and never requests location permission.
+await using (var scope = host.Services.CreateAsyncScope())
+{
+    try { await scope.ServiceProvider.GetRequiredService<RideSessionService>().RecoverInterruptedAsync(); }
+    catch (Exception) { /* Storage is unavailable; recovery is retried on the next start. */ }
+}
+
+await host.RunAsync();

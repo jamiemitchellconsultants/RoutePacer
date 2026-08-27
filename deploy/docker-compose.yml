@@ -15,6 +15,13 @@ services:
       retries: 20
   routepacer:
     image: ghcr.io/jamiemitchellconsultants/routepacer:${ROUTEPACER_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    healthcheck:
+      test: [CMD, dotnet, RoutePacer.Server.dll, --healthcheck]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 5
     depends_on:
       routepacer-db:
         condition: service_healthy
