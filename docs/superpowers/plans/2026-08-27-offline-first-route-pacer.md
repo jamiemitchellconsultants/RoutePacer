@@ -223,7 +223,23 @@ Expected: build succeeds with zero warnings; template tests pass.
 ```bash
 git add global.json Directory.Build.props Directory.Packages.props .config/dotnet-tools.json RoutePacer.slnx src tests README.md
 git commit -m "build: scaffold hosted RoutePacer solution"
+git push -u origin HEAD
 ```
+
+### Review Gate 1: Scaffold and Boundaries
+
+- [ ] Stop before Task 2 and confirm the Task 1 restore, build, and test commands pass from a clean checkout of the pushed branch.
+- [ ] Review the solution structure, dependency pins, project references, strict build settings, hosted-PWA fallback behavior, and removal of template features against Task 1 and the global constraints.
+- [ ] Record every finding, implement corrections, and rerun the complete Task 1 verification.
+- [ ] Stage only Task 1 correction files, commit, and push:
+
+```bash
+git add global.json Directory.Build.props Directory.Packages.props .config/dotnet-tools.json RoutePacer.slnx src tests README.md
+git commit -m "fix: address scaffold review"
+git push -u origin HEAD
+```
+
+- [ ] Continue to Task 2 only after the reviewer explicitly approves this gate.
 
 ### Task 2: Define the Domain Model and Storage Contract
 
@@ -354,6 +370,7 @@ Expected: PASS for all aggregate and enum behavior.
 ```bash
 git add src/RoutePacer.Core/Domain src/RoutePacer.Core/Storage tests/RoutePacer.Core.Tests/Domain
 git commit -m "feat: define route and ride domain contracts"
+git push -u origin HEAD
 ```
 
 ### Task 3: Implement Geodesy and Route Normalization
@@ -431,6 +448,7 @@ Expected: PASS.
 ```bash
 git add src/RoutePacer.Core/Import src/RoutePacer.Core/Tracking/GeoMath.cs tests/RoutePacer.Core.Tests
 git commit -m "feat: normalize route geometry and timing"
+git push -u origin HEAD
 ```
 
 ### Task 4: Parse GPX Routes Securely
@@ -499,6 +517,7 @@ Expected: PASS.
 ```bash
 git add src/RoutePacer.Core/Import tests/RoutePacer.Core.Tests/Import tests/RoutePacer.Core.Tests/Fixtures
 git commit -m "feat: parse GPX reference routes"
+git push -u origin HEAD
 ```
 
 ### Task 5: Parse FIT Routes and Share the Import Pipeline
@@ -555,6 +574,7 @@ Expected: PASS.
 ```bash
 git add src/RoutePacer.Core/Import tests/RoutePacer.Core.Tests/Import tests/RoutePacer.Core.Tests/Fixtures
 git commit -m "feat: import and normalize GPX and FIT routes"
+git push -u origin HEAD
 ```
 
 ### Task 6: Persist Routes and Rides Transactionally in IndexedDB
@@ -635,6 +655,7 @@ Expected: PASS with zero warnings.
 ```bash
 git add src/RoutePacer.App/Storage src/RoutePacer.App/wwwroot/js/storage.js src/RoutePacer.App/Program.cs src/RoutePacer.App/wwwroot/index.html tests/RoutePacer.App.Tests/Storage
 git commit -m "feat: persist routes and rides in IndexedDB"
+git push -u origin HEAD
 ```
 
 ### Task 7: Build Manual Import and Route Library Workflows
@@ -712,7 +733,24 @@ Expected: PASS.
 ```bash
 git add src/RoutePacer.App/Routes src/RoutePacer.App/Pages src/RoutePacer.App/Components src/RoutePacer.App/Layout src/RoutePacer.App/Program.cs tests/RoutePacer.App.Tests
 git commit -m "feat: add route import and offline library"
+git push -u origin HEAD
 ```
+
+### Review Gate 2: Manual Import and Offline Route Library
+
+- [ ] Stop before Task 8 and run `dotnet test RoutePacer.slnx` followed by `dotnet build RoutePacer.slnx`; both commands must pass with zero warnings.
+- [ ] Review Tasks 2–7 for domain invariants, GPX/FIT parser safety, normalization correctness, transactional IndexedDB behavior, the 50 MB limit, actionable import failures, and the complete manual-import-to-Start-ride workflow.
+- [ ] Exercise the manual picker with representative timed GPX, untimed GPX, FIT, malformed, empty, and oversized inputs; confirm failed imports leave no partial route data.
+- [ ] Record every finding, implement corrections, and rerun the full solution tests and build.
+- [ ] Stage only corrections within the Tasks 2–7 scope, commit, and push:
+
+```bash
+git add src/RoutePacer.Core src/RoutePacer.App tests/RoutePacer.Core.Tests tests/RoutePacer.App.Tests
+git commit -m "fix: address import workflow review"
+git push -u origin HEAD
+```
+
+- [ ] Continue to Task 8 only after the reviewer explicitly approves this gate.
 
 ### Task 8: Create the Dedicated Handoff Store
 
@@ -819,6 +857,7 @@ Expected: tests PASS; pending-model command reports no changes.
 ```bash
 git add src/RoutePacer.Persistence tests/RoutePacer.Persistence.Tests
 git commit -m "feat: add ephemeral PostgreSQL handoff store"
+git push -u origin HEAD
 ```
 
 ### Task 9: Implement Authenticated Relay Creation
@@ -919,6 +958,7 @@ Expected: PASS.
 ```bash
 git add src/RoutePacer.Server tests/RoutePacer.Server.Tests
 git commit -m "feat: accept authenticated GPX relay uploads"
+git push -u origin HEAD
 ```
 
 ### Task 10: Implement One-Time Consumption and Expiry Cleanup
@@ -999,6 +1039,7 @@ Expected: PASS; the concurrent case reports exactly one success on repeated runs
 ```bash
 git add src/RoutePacer.Server/Handoffs src/RoutePacer.Server/Program.cs tests/RoutePacer.Server.Tests tests/RoutePacer.Persistence.Tests
 git commit -m "feat: consume relay handoffs exactly once"
+git push -u origin HEAD
 ```
 
 ### Task 11: Implement RouteTimer Contract v1 Intake
@@ -1114,7 +1155,24 @@ Expected: tests PASS; repository scan returns no matches.
 ```bash
 git add docs/contracts src/RoutePacer.App/Invocation src/RoutePacer.App/Pages/Open.razor src/RoutePacer.App/wwwroot/js/invocation.js src/RoutePacer.App/Program.cs src/RoutePacer.Server/Configuration src/RoutePacer.Server/Program.cs tests/RoutePacer.App.Tests tests/RoutePacer.Server.Tests/Configuration
 git commit -m "feat: import signed RouteTimer relay handoffs"
+git push -u origin HEAD
 ```
+
+### Review Gate 3: Relay and RouteTimer Contract v1
+
+- [ ] Stop before Task 12 and run all Persistence, Server, App invocation, and `/open` tests plus `dotnet build RoutePacer.slnx`; every command must pass with zero warnings.
+- [ ] Compare Tasks 8–11 line by line with `docs/superpowers/specs/2026-08-27-routepacer-public-handoff-relay-design.md`, including token shape and hashing, exact ten-minute expiry, atomic `DELETE ... RETURNING`, indistinguishable `404`s, strict media type and size limits, exact query parsing, P-256 verification, exact-origin allowlisting, one-fetch behavior, safe retry classification, and URL cleanup.
+- [ ] Confirm the RoutePacer and RouteTimer Contract v1 fixture files are byte-identical and that no private key, upload credential, token, payload URL, route name, signature, invocation query, or GPX content appears in public assets or captured logs.
+- [ ] Record every finding, implement corrections, and rerun the complete gate verification.
+- [ ] Stage only corrections within the Tasks 8–11 scope, commit, and push:
+
+```bash
+git add docs/contracts src/RoutePacer.Persistence src/RoutePacer.Server src/RoutePacer.App/Invocation src/RoutePacer.App/Pages/Open.razor src/RoutePacer.App/wwwroot/js/invocation.js tests/RoutePacer.Persistence.Tests tests/RoutePacer.Server.Tests tests/RoutePacer.App.Tests
+git commit -m "fix: address handoff contract review"
+git push -u origin HEAD
+```
+
+- [ ] Continue to Task 12 only after the reviewer explicitly approves this gate.
 
 ### Task 12: Implement Spatial Route Matching
 
@@ -1173,6 +1231,7 @@ Expected: PASS.
 ```bash
 git add src/RoutePacer.Core/Tracking tests/RoutePacer.Core.Tests/Tracking
 git commit -m "feat: match live positions to route segments"
+git push -u origin HEAD
 ```
 
 ### Task 13: Implement Time and Distance Pacing
@@ -1231,6 +1290,7 @@ Expected: PASS.
 ```bash
 git add src/RoutePacer.Core/Tracking tests/RoutePacer.Core.Tests/Tracking
 git commit -m "feat: calculate route time and distance lead lag"
+git push -u origin HEAD
 ```
 
 ### Task 14: Bridge GPS and Wake Lock Browser Capabilities
@@ -1295,6 +1355,7 @@ Expected: PASS.
 ```bash
 git add src/RoutePacer.App/Browser src/RoutePacer.App/wwwroot/js/gps.js src/RoutePacer.App/wwwroot/js/wakelock.js src/RoutePacer.App/Program.cs tests/RoutePacer.App.Tests/Browser
 git commit -m "feat: add GPS and wake lock browser bridges"
+git push -u origin HEAD
 ```
 
 ### Task 15: Record and Recover Ride Sessions
@@ -1350,6 +1411,7 @@ Expected: PASS.
 ```bash
 git add src/RoutePacer.App/Rides src/RoutePacer.App/Program.cs tests/RoutePacer.App.Tests/Rides
 git commit -m "feat: record resilient offline ride sessions"
+git push -u origin HEAD
 ```
 
 ### Task 16: Build the Live Tracker Dashboard
@@ -1405,6 +1467,7 @@ Expected: PASS.
 ```bash
 git add src/RoutePacer.App/Pages/Track.razor src/RoutePacer.App/Components src/RoutePacer.App/Formatting src/RoutePacer.App/wwwroot/css/tracker.css tests/RoutePacer.App.Tests
 git commit -m "feat: add live pacing dashboard"
+git push -u origin HEAD
 ```
 
 ### Task 17: Add Ride History, Detail, and Explicit Deletion
@@ -1456,7 +1519,24 @@ Expected: PASS.
 ```bash
 git add src/RoutePacer.App/Pages src/RoutePacer.App/Components src/RoutePacer.App/Layout tests/RoutePacer.App.Tests/Pages
 git commit -m "feat: add local ride history and deletion"
+git push -u origin HEAD
 ```
+
+### Review Gate 4: Pacing, Ride Lifecycle, and Rider UI
+
+- [ ] Stop before Task 18 and run `dotnet test RoutePacer.slnx` followed by `dotnet build RoutePacer.slnx`; both commands must pass with zero warnings.
+- [ ] Review Tasks 12–17 for projection accuracy, crossing stability, ahead/behind sign conventions, untimed-route behavior, GPS and Wake Lock lifecycle, spike rejection, pause/resume accounting, crash recovery, point persistence, UI throttling without data loss, accessible pacing presentation, ride history, and deletion constraints.
+- [ ] Exercise the complete rider flow from a manually imported timed route through Start ride, live time and distance pacing, pause, resume, stop, history, detail, and deletion; repeat with an untimed route and verify distance-only behavior.
+- [ ] Record every finding, implement corrections, and rerun the full solution tests and build.
+- [ ] Stage only corrections within the Tasks 12–17 scope, commit, and push:
+
+```bash
+git add src/RoutePacer.Core/Tracking src/RoutePacer.App/Browser src/RoutePacer.App/Rides src/RoutePacer.App/Pages src/RoutePacer.App/Components src/RoutePacer.App/Formatting src/RoutePacer.App/wwwroot/css/tracker.css tests/RoutePacer.Core.Tests/Tracking tests/RoutePacer.App.Tests
+git commit -m "fix: address rider workflow review"
+git push -u origin HEAD
+```
+
+- [ ] Continue to Task 18 only after the reviewer explicitly approves this gate.
 
 ### Task 18: Harden the PWA Shell and Prove Offline Operation
 
@@ -1530,11 +1610,13 @@ Expected: all unit, component, and browser tests pass; the published app contain
 ```bash
 git add src/RoutePacer.App/wwwroot tests/RoutePacer.E2E docs/manual-validation.md
 git commit -m "test: verify installable offline RoutePacer PWA"
+git push -u origin HEAD
 ```
 
 ### Task 19: Add Container, Health, Caddy, and Forward-Only Deployment
 
 **Files:**
+- Modify: `.gitignore`
 - Create: `Dockerfile`
 - Create: `.dockerignore`
 - Create: `.github/workflows/publish-container.yml`
@@ -1555,7 +1637,7 @@ git commit -m "test: verify installable offline RoutePacer PWA"
 
 **Interfaces:**
 - Consumes: completed hosted application, PostgreSQL migration, relay and intake feature controls.
-- Produces: multi-arch container image, dedicated internal PostgreSQL deployment, migration-gated `/health/ready`, shared-Caddy route, forward-only deployment runbook, and production-like acceptance test.
+- Produces: multi-arch container image, dedicated internal PostgreSQL deployment, migration-gated `/health/ready`, shared-Caddy route, forward-only deployment runbook, production-like acceptance test, and ignored captured-log evidence under `artifacts/test-logs`.
 
 - [ ] **Step 1: Write failing health and deployment-shape tests**
 
@@ -1642,7 +1724,7 @@ The complete Caddy configuration must validate before reload. Discard site acces
 
 - [ ] **Step 8: Add captured-log and production-like tests**
 
-Send a canary credential, token, payload URL, signed query, route name, and GPX marker through success and failure paths while capturing application logs. Assert none appear. The production-like test starts private-only RouteTimer, public-context RoutePacer plus PostgreSQL, uploads outbound, opens the signed URL in a phone-sized Playwright context, verifies exact IndexedDB import and ready state, queries PostgreSQL for zero rows, and asserts a direct second GET is `404`.
+Add `artifacts/test-logs/` to `.gitignore`. `SensitiveLoggingTests` resolves the repository root by walking upward from `AppContext.BaseDirectory` until it finds `RoutePacer.slnx`, creates `artifacts/test-logs`, deletes stale files there, sends a canary credential, token, payload URL, signed query, route name, and GPX marker through success and failure paths, and writes the complete captured application logs to `artifacts/test-logs/sensitive-logging.log`. Assert the file is non-empty and none of the canaries appear. The production-like test starts private-only RouteTimer, public-context RoutePacer plus PostgreSQL, uploads outbound, opens the signed URL in a phone-sized Playwright context, verifies exact IndexedDB import and ready state, queries PostgreSQL for zero rows, and asserts a direct second GET is `404`.
 
 - [ ] **Step 9: Add container publishing workflow**
 
@@ -1658,6 +1740,7 @@ docker compose -f deploy/docker-compose.local.yml config --quiet
 docker build -t routepacer:test .
 dotnet test tests/RoutePacer.Server.Tests --filter FullyQualifiedName~Health
 dotnet test tests/RoutePacer.E2E --filter "FullyQualifiedName~DeploymentConfigurationTests|FullyQualifiedName~SensitiveLoggingTests|FullyQualifiedName~ProductionLikeHandoffTests"
+test -s artifacts/test-logs/sensitive-logging.log
 ```
 
 Expected: Compose and image build exit `0`; tests PASS; database has no published port or backup service.
@@ -1665,8 +1748,9 @@ Expected: Compose and image build exit `0`; tests PASS; database has no publishe
 - [ ] **Step 11: Commit**
 
 ```bash
-git add Dockerfile .dockerignore .github/workflows/publish-container.yml deploy src/RoutePacer.Server/Health src/RoutePacer.Server/Program.cs tests/RoutePacer.Server.Tests/Health tests/RoutePacer.E2E
+git add .gitignore Dockerfile .dockerignore .github/workflows/publish-container.yml deploy src/RoutePacer.Server/Health src/RoutePacer.Server/Program.cs tests/RoutePacer.Server.Tests/Health tests/RoutePacer.E2E
 git commit -m "deploy: host RoutePacer relay behind Caddy"
+git push -u origin HEAD
 ```
 
 ### Task 20: Add Performance Regression Coverage and Release Documentation
@@ -1711,8 +1795,10 @@ Sequence deployment as: publish RoutePacer with relay uploads and intake disable
 Run:
 
 ```bash
-rg -n "PRIVATE KEY|HMACSHA|UploadCredential|RelayUpload" src/RoutePacer.App/wwwroot
-rg -n "route name canary|gpx log canary|payload token canary|relay credential canary" artifacts/test-logs
+test -d src/RoutePacer.App/wwwroot
+! rg -n "PRIVATE KEY|HMACSHA|UploadCredential|RelayUpload" src/RoutePacer.App/wwwroot
+test -s artifacts/test-logs/sensitive-logging.log
+! rg -n "route name canary|gpx log canary|payload token canary|relay credential canary" artifacts/test-logs
 dotnet format RoutePacer.slnx --verify-no-changes
 dotnet build RoutePacer.slnx -c Release
 dotnet test RoutePacer.slnx -c Release --no-build
@@ -1726,7 +1812,25 @@ Expected: both sensitive scans return no matches; formatting, build, and tests p
 ```bash
 git add tests README.md docs/architecture.md docs/privacy.md docs/route-timer-rollout.md
 git commit -m "docs: complete RoutePacer release guidance"
+git push -u origin HEAD
 ```
+
+### Review Gate 5: Release Acceptance
+
+- [ ] Stop at a clean checkout of the pushed branch. Run the Task 19 production-like deployment tests first so they create `artifacts/test-logs/sensitive-logging.log`, then run the Task 18 release acceptance suite and the Task 20 full verification commands; every command must pass.
+- [ ] Review Tasks 18–20 against every row in the MVP acceptance traceability table and every acceptance criterion in `docs/superpowers/specs/2026-08-27-routepacer-public-handoff-relay-design.md`.
+- [ ] Complete the iOS, Android, desktop, large-route, long-ride, airplane-mode, real-QR, second-fetch, expiry-cleanup, private-RouteTimer-networking, and manual-fallback entries in `docs/manual-validation.md` with evidence and explicit pass/fail results.
+- [ ] Confirm the container image is immutable, both feature controls remain disabled by default, PostgreSQL has no public port or backup path, Caddy and application logging are redacted, and the documented enablement order is exact.
+- [ ] Record every finding, implement corrections, and rerun the complete release verification.
+- [ ] Stage only release correction files, commit, and push:
+
+```bash
+git add .gitignore src tests Dockerfile .dockerignore .github/workflows/publish-container.yml deploy README.md docs/architecture.md docs/privacy.md docs/route-timer-rollout.md docs/manual-validation.md
+git commit -m "fix: address release acceptance review"
+git push -u origin HEAD
+```
+
+- [ ] Mark implementation complete only after the final reviewer explicitly approves this gate.
 
 ---
 
