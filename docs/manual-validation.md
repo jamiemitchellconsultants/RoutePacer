@@ -31,7 +31,6 @@ date, and evidence for each run. A row is not passed until its evidence exists.
 | 1 | Load, import a route, reload | Route still listed from IndexedDB | | |
 | 2 | Upgrade over a previous install | Existing routes and rides survive the upgrade | | |
 | 3 | Go offline and reload | App shell and library load from cache | | |
-| 4 | Open a signed RouteTimer link on the production origin | Imports and reaches Start ride; address bar shows a bare `/open` | | |
 
 ## Large route
 
@@ -47,17 +46,3 @@ date, and evidence for each run. A row is not passed until its evidence exists.
 |---|---|---|---|---|
 | 1 | Routes and ride history with no network | Both fully available | | |
 | 2 | Start a ride on a previously imported route | Tracking works with no network at all | | |
-
-## RouteTimer handoff on the production origin
-
-These cannot run against a loopback host because Contract v1 pins the origin as a code constant.
-
-| # | Step | Expected | Result | Evidence |
-|---|---|---|---|---|
-| 1 | Scan a real QR from RouteTimer on a phone | Route imports and reaches Start ride | | |
-| 2 | Re-open the same link immediately | Fails with recovery copy and a manual GPX picker | | |
-| 3 | Query the relay for that token | Zero rows | | |
-| 4 | Direct second GET of the payload URL | `404`, identical to an unknown token | | |
-| 5 | Leave a link unopened past ten minutes | Expired; cleanup removes the row | | |
-| 6 | Tamper with any query value | Rejected; nothing is fetched | | |
-| 7 | Private RouteTimer networking | RouteTimer is not publicly reachable; only the relay is | | |

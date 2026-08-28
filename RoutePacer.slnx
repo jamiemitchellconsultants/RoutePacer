@@ -2,14 +2,12 @@
   <Folder Name="/src/">
     <Project Path="src/RoutePacer.App/RoutePacer.App.csproj" />
     <Project Path="src/RoutePacer.Core/RoutePacer.Core.csproj" />
-    <Project Path="src/RoutePacer.Persistence/RoutePacer.Persistence.csproj" />
     <Project Path="src/RoutePacer.Server/RoutePacer.Server.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/RoutePacer.App.Tests/RoutePacer.App.Tests.csproj" />
     <Project Path="tests/RoutePacer.Core.Tests/RoutePacer.Core.Tests.csproj" />
     <Project Path="tests/RoutePacer.E2E/RoutePacer.E2E.csproj" />
-    <Project Path="tests/RoutePacer.Persistence.Tests/RoutePacer.Persistence.Tests.csproj" />
     <Project Path="tests/RoutePacer.Server.Tests/RoutePacer.Server.Tests.csproj" />
   </Folder>
 </Solution>

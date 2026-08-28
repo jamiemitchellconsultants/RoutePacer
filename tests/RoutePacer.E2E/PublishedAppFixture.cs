@@ -5,8 +5,8 @@ namespace RoutePacer.E2E;
 
 /// <summary>
 /// Publishes RoutePacer.Server and runs it under Kestrel so a real browser loads the real published PWA:
-/// the Blazor assets, service worker, and manifest, not a test double. The relay database is not needed,
-/// so migrations stay off and readiness is not used as the startup signal.
+/// the Blazor assets, service worker, and manifest, not a test double. The server holds no state and
+/// reaches no dependency, so startup needs no readiness gate.
 /// </summary>
 public sealed class PublishedAppFixture : IAsyncLifetime
 {
@@ -30,9 +30,6 @@ public sealed class PublishedAppFixture : IAsyncLifetime
         };
         info.Environment["ASPNETCORE_URLS"] = BaseUrl;
         info.Environment["ASPNETCORE_ENVIRONMENT"] = "Production";
-        info.Environment["Database__ApplyMigrations"] = "false";
-        info.Environment["HandoffRelay__UploadsEnabled"] = "false";
-        info.Environment["RouteTimerInvocation__Enabled"] = "false";
 
         server = Process.Start(info) ?? throw new InvalidOperationException("The published server could not be started.");
 

@@ -8,7 +8,7 @@ self.addEventListener('activate', event => event.waitUntil(caches.keys().then(ke
 self.addEventListener('fetch', event => {
   const request = event.request;
   const url = new URL(request.url);
-  if (request.method !== 'GET' || url.origin !== self.origin || url.pathname.startsWith('/api') || url.pathname.startsWith('/health') || (url.pathname === '/open' && url.search)) return;
+  if (request.method !== 'GET' || url.origin !== self.origin || url.pathname.startsWith('/api') || url.pathname.startsWith('/health')) return;
   if (request.mode === 'navigate') event.respondWith(fetch(request).catch(() => caches.match('/index.html')));
   else event.respondWith(caches.open(cacheName).then(async cache => { const cached = await cache.match(request); const network = fetch(request).then(response => { if (response.ok) cache.put(request, response.clone()); return response; }).catch(() => cached); return cached || network; }));
 });
