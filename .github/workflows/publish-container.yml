@@ -22,18 +22,26 @@ jobs:
       # is ever published.
       - run: pwsh tests/RoutePacer.E2E/bin/Release/net10.0/playwright.ps1 install --with-deps chromium
       - run: dotnet test RoutePacer.slnx -c Release --no-build
-      - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      # linux/amd64 only, deliberately. The Dockerfile runs the whole restore and publish -- the
+      # Blazor WebAssembly payload included -- inside the image, and no arm64 runner is available
+      # here, so an arm64 leg would be emulated under QEMU. That leg took roughly ten times as long
+      # as the native one and dominated the entire gate.
+      #
+      # The one deployment this image exists for is a single x64 host running Linux containers, so
+      # nothing pulls arm64. If you need it, build the Dockerfile yourself -- it carries no
+      # architecture assumption, and both base images are multi-arch, so `docker build` on an arm64
+      # machine produces an arm64 image natively and quickly.
       - uses: docker/build-push-action@v6
         with:
           context: .
           push: true
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           tags: |
             ghcr.io/jamiemitchellconsultants/routepacer:latest
             ghcr.io/jamiemitchellconsultants/routepacer:${{ github.sha }}
