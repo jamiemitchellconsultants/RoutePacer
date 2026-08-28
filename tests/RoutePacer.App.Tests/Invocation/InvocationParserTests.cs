@@ -13,7 +13,7 @@ public sealed class InvocationParserTests
 
     private readonly InvocationParser _parser = new();
 
-    private static string Url(string? src = "RouteTimer", string? v = "1", string? payload = PayloadUrl,
+    private static string Url(string? src = "rt", string? v = "1", string? payload = PayloadUrl,
         string? name = "", long? ts = null, string? sig = null, string? extra = null, string? path = "/open")
     {
         var parts = new List<string>();
@@ -57,11 +57,11 @@ public sealed class InvocationParserTests
         Reject(Url(v: null));
         Reject(Url(payload: null));
         Reject(Url(name: null));
-        Reject("https://pacetracking.tqaentry.com/open?src=RouteTimer&v=1&payload=" + Uri.EscapeDataString(PayloadUrl) + "&name=");
+        Reject("https://pacetracking.tqaentry.com/open?src=rt&v=1&payload=" + Uri.EscapeDataString(PayloadUrl) + "&name=");
     }
 
     [Theory]
-    [InlineData("src=RouteTimer")]
+    [InlineData("src=rt")]
     [InlineData("v=1")]
     [InlineData("name=other")]
     public void Rejects_a_duplicated_key(string duplicate) => Reject(Url(extra: duplicate));
@@ -70,9 +70,13 @@ public sealed class InvocationParserTests
     public void Rejects_an_additional_key() => Reject(Url(extra: "utm_source=qr"));
 
     [Theory]
+    [InlineData("RT")]
+    [InlineData("Rt")]
+    [InlineData("rt ")]
+    [InlineData(" rt")]
     [InlineData("routetimer")]
-    [InlineData("RouteTimer ")]
     [InlineData("Strava")]
+    [InlineData("")]
     public void Rejects_a_wrong_source(string src) => Reject(Url(src: src));
 
     [Theory]
@@ -85,7 +89,7 @@ public sealed class InvocationParserTests
     public void A_stray_percent_is_normalized_by_Uri_and_read_as_a_literal()
     {
         // System.Uri escapes a percent that does not begin a valid triplet, so it reaches the parser as "%zz".
-        var url = $"https://pacetracking.tqaentry.com/open?src=RouteTimer&v=1&payload={Uri.EscapeDataString(PayloadUrl)}&name=%zz&ts={Now.ToUnixTimeMilliseconds()}&sig={Signature}";
+        var url = $"https://pacetracking.tqaentry.com/open?src=rt&v=1&payload={Uri.EscapeDataString(PayloadUrl)}&name=%zz&ts={Now.ToUnixTimeMilliseconds()}&sig={Signature}";
 
         _parser.Parse(new Uri(url), Now).Name.Should().Be("%zz");
     }
@@ -107,7 +111,7 @@ public sealed class InvocationParserTests
     [InlineData("https://evil.example.com/open")]
     [InlineData("https://pacetracking.tqaentry.com/opened")]
     public void Rejects_a_foreign_or_insecure_invocation_url(string prefix)
-        => Reject($"{prefix}?src=RouteTimer&v=1&payload={Uri.EscapeDataString(PayloadUrl)}&name=&ts={Now.ToUnixTimeMilliseconds()}&sig={Signature}");
+        => Reject($"{prefix}?src=rt&v=1&payload={Uri.EscapeDataString(PayloadUrl)}&name=&ts={Now.ToUnixTimeMilliseconds()}&sig={Signature}");
 
     [Fact]
     public void Rejects_a_fragment_on_the_invocation_url() => Reject(Url() + "#fragment");
@@ -117,7 +121,7 @@ public sealed class InvocationParserTests
     [InlineData("-1")]
     [InlineData("1.5")]
     public void Rejects_an_invalid_timestamp(string ts)
-        => Reject($"https://pacetracking.tqaentry.com/open?src=RouteTimer&v=1&payload={Uri.EscapeDataString(PayloadUrl)}&name=&ts={ts}&sig={Signature}");
+        => Reject($"https://pacetracking.tqaentry.com/open?src=rt&v=1&payload={Uri.EscapeDataString(PayloadUrl)}&name=&ts={ts}&sig={Signature}");
 
     [Theory]
     [InlineData("AAAA")]
@@ -149,5 +153,28 @@ public sealed class InvocationParserTests
         var bytes = InvocationCanonicalizer.GetBytes(new InvocationRequest(new Uri(PayloadUrl), "Café & climb", 1787832000000, Signature));
 
         Encoding.UTF8.GetString(bytes).Should().Be($"rt\n1\n{PayloadUrl}\nCafé & climb\n1787832000000");
+    }
+
+    [Fact]
+    public void Accepts_the_contract_source_marker()
+    {
+        var request = _parser.Parse(new Uri(Url(src: "rt")), Now);
+
+        request.PayloadUri.AbsoluteUri.Should().Be(PayloadUrl);
+    }
+
+    [Fact]
+    public void Rejects_the_source_marker_the_canonical_bytes_never_committed_to()
+        => Reject(Url(src: "RouteTimer"));
+
+    [Fact]
+    public void Rejects_an_absent_source() => Reject(Url(src: null));
+
+    [Fact]
+    public void The_accepted_source_marker_is_the_one_the_canonical_bytes_open_with()
+    {
+        var request = _parser.Parse(new Uri(Url(src: "rt")), Now);
+
+        Encoding.UTF8.GetString(InvocationCanonicalizer.GetBytes(request)).Should().StartWith("rt\n1\n");
     }
 }

@@ -1,15 +1,16 @@
 {
-  "fixtureVersion": 1,
+  "version": 1,
   "publicJwk": {
     "kty": "EC",
-    "crv": "P-256",
-    "x": "UtdWHp_xeGuOkarqYW_IGdtg5osMQWJNFEhxyyE5eXs",
-    "y": "GK7gB55K5rtaXVbsm7mKWE4kLH_8V-2TKxYzq5SaVNI"
+    "x": "eF97z6UgPFxtHzeoAzuf_FIPvlmyQXtTXljf80NHLr0",
+    "y": "g9KVk0X5YDaiuLOO88a1QyAtZ5n9wQwbcDkW7enM6oQ",
+    "crv": "P-256"
   },
-  "canonicalText": "rt\n1\nhttps://pacetracking.tqaentry.com/api/handoffs/9Xq2mWbTf4LpN0sRvEjKcYzA7dHuG1iObQ3xVn5MtSw\nCafé & climb\n1787832000000",
-  "payloadUrl": "https://pacetracking.tqaentry.com/api/handoffs/9Xq2mWbTf4LpN0sRvEjKcYzA7dHuG1iObQ3xVn5MtSw",
-  "name": "Café & climb",
-  "timestamp": 1787832000000,
-  "signature": "LNGZHR4iJ5q4kdMiRJ2a8ahbbMN53wbgZ3jA9EuzoQ7jg4lLnCsz1EWzcAEzk-nSKwOFmEC7T1asYrkHuwkUpg",
-  "invocationUrl": "https://pacetracking.tqaentry.com/open?src=RouteTimer&v=1&payload=https%3A%2F%2Fpacetracking.tqaentry.com%2Fapi%2Fhandoffs%2F9Xq2mWbTf4LpN0sRvEjKcYzA7dHuG1iObQ3xVn5MtSw&name=Caf%C3%A9%20%26%20climb&ts=1787832000000&sig=LNGZHR4iJ5q4kdMiRJ2a8ahbbMN53wbgZ3jA9EuzoQ7jg4lLnCsz1EWzcAEzk-nSKwOFmEC7T1asYrkHuwkUpg"
+  "privateKeyPem": "-----BEGIN PRIVATE KEY-----\nMIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQg2Ylwv8R3sYAMK3mj\n/BhpxW9UXtZtVEfTJdiHpk26dOWhRANCAAR4X3vPpSA8XG0fN6gDO5/8Ug++WbJB\ne1NeWN/zQ0cuvYPSlZNF+WA2orizjvPGtUMgLWeZ/cEMG3A5Fu3pzOqE\n-----END PRIVATE KEY-----\n",
+  "payloadUrl": "https://pacetracking.tqaentry.com/api/handoffs/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+  "name": "Kingston & Dorking",
+  "issuedUnixMilliseconds": 1787832000000,
+  "canonical": "rt\n1\nhttps://pacetracking.tqaentry.com/api/handoffs/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\nKingston & Dorking\n1787832000000",
+  "signature": "T57agZOYCwa3hUGbXWUICfn87S2izTwwcOUXHh5YHtzsj5Zlhzi0UOZmHQqo3AIZ7QtV133Pv8idmJjl81YrwQ",
+  "invocationUrl": "https://pacetracking.tqaentry.com/open?src=rt&v=1&payload=https%3A%2F%2Fpacetracking.tqaentry.com%2Fapi%2Fhandoffs%2FAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&name=Kingston%20%26%20Dorking&ts=1787832000000&sig=T57agZOYCwa3hUGbXWUICfn87S2izTwwcOUXHh5YHtzsj5Zlhzi0UOZmHQqo3AIZ7QtV133Pv8idmJjl81YrwQ"
 }

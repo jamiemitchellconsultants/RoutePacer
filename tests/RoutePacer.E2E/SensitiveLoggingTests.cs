@@ -121,7 +121,7 @@ public sealed class SensitiveLoggingTests
         await client.SendAsync(unauthorized);
 
         await client.GetAsync("/api/handoffs/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
-        await client.GetAsync($"/open?src=RouteTimer&v=1&payload={Uri.EscapeDataString(payloadUrl)}&name={Uri.EscapeDataString(RouteNameCanary)}&ts=1787832000000&sig={new string('A', 86)}");
+        await client.GetAsync($"/open?src=rt&v=1&payload={Uri.EscapeDataString(payloadUrl)}&name={Uri.EscapeDataString(RouteNameCanary)}&ts=1787832000000&sig={new string('A', 86)}");
 
         store.Fail = true;
         var failing = new HttpRequestMessage(HttpMethod.Post, "/api/handoffs") { Content = new StringContent($"<gpx>{GpxCanary}</gpx>") };

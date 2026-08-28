@@ -96,4 +96,34 @@ public sealed class InvocationFixtureTests
 
         _fixture.Verify(InvocationCanonicalizer.GetBytes(request), tampered).Should().BeFalse();
     }
+
+    [Fact]
+    public void The_fixture_invocation_url_carries_the_contract_source_marker()
+        => _fixture.InvocationUrl.Should().Contain("/open?src=rt&v=1&");
+
+    [Fact]
+    public void The_fixture_invocation_url_is_refused_once_its_source_marker_is_altered()
+    {
+        var altered = _fixture.InvocationUrl.Replace("?src=rt&", "?src=RouteTimer&");
+
+        new InvocationParser().Invoking(p => p.Parse(new Uri(altered), _fixture.IssuedAt.AddMinutes(1)))
+            .Should().Throw<FormatException>();
+    }
+
+    [Fact]
+    public void The_canonical_bytes_the_parser_feeds_the_verifier_open_with_the_source_marker()
+    {
+        var request = new InvocationParser().Parse(new Uri(_fixture.InvocationUrl), _fixture.IssuedAt.AddMinutes(1));
+
+        Encoding.UTF8.GetString(InvocationCanonicalizer.GetBytes(request)).Should().StartWith("rt\n1\n");
+    }
+
+    [Fact]
+    public void The_fixture_is_refused_outside_its_validity_window()
+    {
+        var parser = new InvocationParser();
+
+        parser.Invoking(p => p.Parse(new Uri(_fixture.InvocationUrl), _fixture.IssuedAt.AddMinutes(11)))
+            .Should().Throw<FormatException>();
+    }
 }

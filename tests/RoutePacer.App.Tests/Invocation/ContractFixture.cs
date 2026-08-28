@@ -3,7 +3,11 @@ using System.Text.Json;
 
 namespace RoutePacer.App.Tests.Invocation;
 
-/// <summary>The frozen Contract v1 vector shared with RouteTimer.</summary>
+/// <summary>
+/// The frozen Contract v1 vector, mirrored byte-for-byte from RouteTimer's copy at
+/// tests/RouteTimer.Services.Tests/RoutePacer/Fixtures/routepacer-contract-v1.json.
+/// Its key pair is a published test key and must never be used in a deployed environment.
+/// </summary>
 public sealed class ContractFixture
 {
     public static ContractFixture Load()
@@ -13,12 +17,12 @@ public sealed class ContractFixture
         var root = document.RootElement;
         return new ContractFixture
         {
-            FixtureVersion = root.GetProperty("fixtureVersion").GetInt32(),
+            FixtureVersion = root.GetProperty("version").GetInt32(),
             PublicJwk = root.GetProperty("publicJwk").GetRawText(),
-            CanonicalText = root.GetProperty("canonicalText").GetString()!,
+            CanonicalText = root.GetProperty("canonical").GetString()!,
             PayloadUrl = root.GetProperty("payloadUrl").GetString()!,
             Name = root.GetProperty("name").GetString()!,
-            Timestamp = root.GetProperty("timestamp").GetInt64(),
+            Timestamp = root.GetProperty("issuedUnixMilliseconds").GetInt64(),
             Signature = root.GetProperty("signature").GetString()!,
             InvocationUrl = root.GetProperty("invocationUrl").GetString()!,
         };
