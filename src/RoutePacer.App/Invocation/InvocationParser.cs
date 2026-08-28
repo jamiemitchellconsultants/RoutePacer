@@ -19,7 +19,7 @@ public sealed class InvocationParser
             var key = Decode(pair[..separator]); var value = Decode(pair[(separator + 1)..]);
             if (!Keys.Contains(key) || !values.TryAdd(key, value)) throw new FormatException("Invalid invocation query.");
         }
-        if (values.Count != Keys.Count || Keys.Any(k => !values.ContainsKey(k)) || values["src"] != "RouteTimer" || values["v"] != "1" || string.IsNullOrEmpty(values["payload"]) || string.IsNullOrEmpty(values["ts"]) || string.IsNullOrEmpty(values["sig"])) throw new FormatException("Invalid invocation query.");
+        if (values.Count != Keys.Count || Keys.Any(k => !values.ContainsKey(k)) || values["src"] != "rt" || values["v"] != "1" || string.IsNullOrEmpty(values["payload"]) || string.IsNullOrEmpty(values["ts"]) || string.IsNullOrEmpty(values["sig"])) throw new FormatException("Invalid invocation query.");
         if (!Uri.TryCreate(values["payload"], UriKind.Absolute, out var payload) || payload.Scheme != Uri.UriSchemeHttps || payload.Port != 443 || !string.Equals(payload.Host, invocationUri.Host, StringComparison.OrdinalIgnoreCase) || payload.UserInfo.Length > 0 || !string.IsNullOrEmpty(payload.Query) || !string.IsNullOrEmpty(payload.Fragment) || !payload.AbsolutePath.StartsWith("/api/handoffs/", StringComparison.Ordinal) || !Token.IsMatch(payload.Segments.LastOrDefault() ?? "")) throw new FormatException("Invalid payload URL.");
         if (!long.TryParse(values["ts"], NumberStyles.None, CultureInfo.InvariantCulture, out var timestamp) || !TryBase64Url(values["sig"], out var signature) || signature.Length != 64) throw new FormatException("Invalid invocation values.");
         var age = now - DateTimeOffset.FromUnixTimeMilliseconds(timestamp);

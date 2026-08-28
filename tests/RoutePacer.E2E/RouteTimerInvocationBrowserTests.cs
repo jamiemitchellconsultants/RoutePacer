@@ -60,7 +60,7 @@ public sealed class RouteTimerInvocationBrowserTests(PublishedAppFixture app) : 
         await using var context = await browser.NewContextAsync();
         var page = await OpenAsync(context);
 
-        var verified = await VerifyAsync(page, fixture.GetProperty("signature").GetString()!, fixture.GetProperty("canonicalText").GetString()!);
+        var verified = await VerifyAsync(page, fixture.GetProperty("signature").GetString()!, fixture.GetProperty("canonical").GetString()!);
 
         verified.Should().BeTrue();
     }
@@ -70,7 +70,7 @@ public sealed class RouteTimerInvocationBrowserTests(PublishedAppFixture app) : 
     {
         await using var context = await browser.NewContextAsync();
         var page = await OpenAsync(context);
-        var tampered = fixture.GetProperty("canonicalText").GetString()!.Replace("Café", "Cafe");
+        var tampered = fixture.GetProperty("canonical").GetString()!.Replace("Kingston", "Kingstone");
 
         (await VerifyAsync(page, fixture.GetProperty("signature").GetString()!, tampered)).Should().BeFalse();
     }
@@ -83,7 +83,7 @@ public sealed class RouteTimerInvocationBrowserTests(PublishedAppFixture app) : 
         var signature = fixture.GetProperty("signature").GetString()!;
         var tampered = (signature[0] == 'A' ? 'B' : 'A') + signature[1..];
 
-        (await VerifyAsync(page, tampered, fixture.GetProperty("canonicalText").GetString()!)).Should().BeFalse();
+        (await VerifyAsync(page, tampered, fixture.GetProperty("canonical").GetString()!)).Should().BeFalse();
     }
 
     [Fact]
@@ -122,7 +122,7 @@ public sealed class RouteTimerInvocationBrowserTests(PublishedAppFixture app) : 
 
         var payload = fixture.GetProperty("payloadUrl").GetString()!;
         var signature = fixture.GetProperty("signature").GetString()!;
-        await page.GotoAsync($"{app.BaseUrl}/open?src=RouteTimer&v=1&payload={Uri.EscapeDataString(payload)}&name=Secret%20Route&ts=1787832000000&sig={signature}");
+        await page.GotoAsync($"{app.BaseUrl}/open?src=rt&v=1&payload={Uri.EscapeDataString(payload)}&name=Secret%20Route&ts=1787832000000&sig={signature}");
 
         await page.WaitForSelectorAsync("text=Could not import shared route", new() { Timeout = BootTimeoutMs });
 

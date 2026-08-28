@@ -11,7 +11,7 @@ The URL is always `https://pacetracking.tqaentry.com/open` with a query carrying
 
 | Key | Value |
 |---|---|
-| `src` | the literal `RouteTimer` |
+| `src` | the literal `rt` |
 | `v` | the literal `1` |
 | `payload` | absolute same-origin handoff URL, `https://pacetracking.tqaentry.com/api/handoffs/{token}` |
 | `name` | route name; may be empty, percent-encoded UTF-8 |
@@ -57,8 +57,12 @@ the rider is offered manual GPX import instead of a retry.
 
 `fixtures/route-timer-contract-v1.json` holds exactly these properties:
 
-`fixtureVersion`, `publicJwk`, `canonicalText`, `payloadUrl`, `name`, `timestamp`, `signature`,
-`invocationUrl`.
+`version`, `publicJwk`, `privateKeyPem`, `payloadUrl`, `name`, `issuedUnixMilliseconds`, `canonical`,
+`signature`, `invocationUrl`.
 
-The key pair is test-only and must never be used in any deployed environment. Tampered cases are derived
-from the fixture at test time; the valid vector itself is never modified.
+The key pair is test-only and must never be used in any deployed environment; `privateKeyPem` is present
+so that RouteTimer can re-sign derived cases, and RoutePacer reads only `publicJwk`. Tampered cases are
+derived from the fixture at test time; the valid vector itself is never modified.
+
+Because `issuedUnixMilliseconds` is frozen, any test that parses `invocationUrl` must supply a fixed clock
+relative to that instant rather than reading the wall clock, or the validity window will reject it.
