@@ -17,6 +17,10 @@ jobs:
       # The image is published only after every gate passes.
       - run: dotnet restore RoutePacer.slnx
       - run: dotnet build RoutePacer.slnx -c Release --no-restore
+      # Microsoft.Playwright.Xunit only drops playwright.ps1 into the build output; it never
+      # downloads a browser. Without this the whole E2E project fails at LaunchAsync and no image
+      # is ever published.
+      - run: pwsh tests/RoutePacer.E2E/bin/Release/net10.0/playwright.ps1 install --with-deps chromium
       - run: dotnet test RoutePacer.slnx -c Release --no-build
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
