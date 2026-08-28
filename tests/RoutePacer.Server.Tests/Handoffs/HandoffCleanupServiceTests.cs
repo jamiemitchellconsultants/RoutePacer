@@ -80,6 +80,33 @@ public sealed class HandoffCleanupServiceTests
         await service.DisposeAsync();
     }
 
+    // The host stops this service and the container disposes it, and nothing orders those two
+    // against each other. Under load the container wins, and a StopAsync that assumed its own
+    // CancellationTokenSource was still alive took the whole test process down with it.
+    [Fact]
+    public async Task Stopping_after_disposal_is_tolerated()
+    {
+        var (service, _, _) = Create(new RecordingHandoffStore());
+        await service.StartAsync(CancellationToken.None);
+        await service.DisposeAsync();
+
+        var stop = async () => await service.StopAsync(CancellationToken.None);
+
+        await stop.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task Disposing_twice_is_tolerated()
+    {
+        var (service, _, _) = Create(new RecordingHandoffStore());
+        await service.StartAsync(CancellationToken.None);
+        await service.DisposeAsync();
+
+        var dispose = async () => await service.DisposeAsync();
+
+        await dispose.Should().NotThrowAsync();
+    }
+
     [Fact]
     public async Task Stopping_prevents_any_further_run()
     {

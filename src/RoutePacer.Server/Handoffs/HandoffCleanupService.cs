@@ -12,6 +12,10 @@ public sealed class HandoffCleanupService(IServiceProvider services, TimeProvide
     private readonly CancellationTokenSource stopping = new();
     private readonly SemaphoreSlim gate = new(1, 1);
     private ITimer? timer;
+    // Two owners tear this service down and nothing orders them: the host calls StopAsync because
+    // it is an IHostedService, and the container calls DisposeAsync because it is IAsyncDisposable.
+    // Either can go first, so both have to tolerate having already run.
+    private bool disposed;
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
@@ -21,6 +25,7 @@ public sealed class HandoffCleanupService(IServiceProvider services, TimeProvide
 
     public async Task StopAsync(CancellationToken cancellationToken)
     {
+        if (disposed) return;
         await stopping.CancelAsync();
         if (timer is not null) { await timer.DisposeAsync(); timer = null; }
     }
@@ -41,7 +46,11 @@ public sealed class HandoffCleanupService(IServiceProvider services, TimeProvide
 
     public async ValueTask DisposeAsync()
     {
+        if (disposed) return;
+        // Cancelled before the flag is set, so a RunOnceAsync still in flight sees a cancelled
+        // token rather than a disposed one and returns at its own guard.
         await StopAsync(CancellationToken.None);
+        disposed = true;
         stopping.Dispose();
         gate.Dispose();
     }
