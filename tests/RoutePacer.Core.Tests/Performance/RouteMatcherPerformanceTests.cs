@@ -40,7 +40,12 @@ public sealed class RouteMatcherPerformanceTests
         // Warm the matcher and establish a previous index so the window policy applies.
         var previous = matcher.Match(route, Fix(route, 1_000), null)!.SegmentIndex;
 
-        var before = GC.GetTotalAllocatedBytes(precise: true);
+        // Thread-scoped, not process-wide. GC.GetTotalAllocatedBytes counts every thread, and xUnit
+        // runs collections in parallel, so this budget was being charged for whatever the GPX and
+        // FIT parser tests allocated alongside it -- measured at up to 8.4 MB of contamination
+        // locally, and enough to breach 25 MiB on a shared runner. The matcher is single-threaded,
+        // so the current thread's counter measures it and nothing else.
+        var before = GC.GetAllocatedBytesForCurrentThread();
         var stopwatch = Stopwatch.StartNew();
         for (var i = 0; i < Matches; i++)
         {
@@ -48,7 +53,7 @@ public sealed class RouteMatcherPerformanceTests
             if (match is not null) previous = match.SegmentIndex;
         }
         stopwatch.Stop();
-        var allocated = GC.GetTotalAllocatedBytes(precise: true) - before;
+        var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
 
         stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(2));
         allocated.Should().BeLessThan(25 * 1024 * 1024);
