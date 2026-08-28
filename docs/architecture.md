@@ -1,22 +1,22 @@
 # RoutePacer architecture
 
 RoutePacer is a hosted Blazor WebAssembly PWA. Everything a rider imports, records, and rides stays on
-their device; the only server-side storage is a deliberately short-lived relay row for a RouteTimer handoff.
+their device. The server has no API and no database: it serves the published application and two health
+probes, and holds no state of any kind.
 
 ## Project boundaries
 
 | Project | Responsibility |
 |---|---|
 | `RoutePacer.Core` | Dependency-free domain: GPX/FIT parsing, normalization, geodesy, matching, pacing. No browser or database types. |
-| `RoutePacer.App` | The PWA: IndexedDB persistence, GPS and wake-lock bridges, ride session state machine, RouteTimer intake, UI. |
-| `RoutePacer.Server` | Hosts the published PWA, the relay API, feature controls, safe logging, rate limiting, health, and the SPA fallback. |
-| `RoutePacer.Persistence` | The relay's four-column PostgreSQL table and its atomic operations. |
+| `RoutePacer.App` | The PWA: IndexedDB persistence, GPS and wake-lock bridges, ride session state machine, UI. |
+| `RoutePacer.Server` | Hosts the published PWA, two health probes, and the SPA fallback. Nothing else. |
 
 ## Import and normalization
 
 `RouteImportService` enforces `0 < length <= 52,428,800`, selects exactly one parser by file extension, and
-hands raw points to `RouteNormalizer`. Both the manual picker and the RouteTimer handoff call this same
-method, so a shared route is normalized identically to a file the rider chose.
+hands raw points to `RouteNormalizer`. Every route enters through this one method, whatever file the
+rider picked.
 
 `RouteNormalizer` runs one deterministic pass: drop exact consecutive coordinate duplicates, require at
 least three remaining points, derive elapsed seconds from timestamps when every point carries one,
@@ -83,33 +83,10 @@ IndexedDB database `routepacer`, version 1, with stores `routes` (key `routeId`)
 deleting an aggregate uses a single read-write transaction across both of its stores, so a route and its
 points can never diverge.
 
-## Relay request flow
-
-```text
-RouteTimer ──POST /api/handoffs (Bearer, application/gpx+xml)──▶ relay
-            ◀── 201 { payloadUrl, expiresAt } ────────────────
-RouteTimer ──signed https://…/open?…─── QR/link ──▶ phone
-phone      ──GET /api/handoffs/{token}──▶ DELETE … RETURNING content
-            ◀── 200 exact GPX bytes, row already gone ────────
-```
-
-The relay generates 32 random bytes, returns them as 43-character unpadded base64url, and stores only
-`SHA-256(bytes)`. Expiry is fixed at ten minutes. Consumption is one statement:
-
-```sql
-DELETE FROM handoffs WHERE token_hash = @token_hash AND expires_at > @now RETURNING content;
-```
-
-Because the delete and the read are the same statement, two racing consumers cannot both win. Every other
-outcome — malformed, unknown, expired, already consumed — returns one identical empty `404`. Uploads are
-authenticated with a constant-time comparison of SHA-256 digests, limited to 10 per minute, and partitioned
-so anonymous traffic cannot exhaust the authenticated window.
-
 ## Offline shell
 
 The service worker precaches the generated Blazor asset manifest under a versioned cache prefix and deletes
 only its own older caches on activate. Navigations fall back to the cached `index.html`; other same-origin
-static GETs are stale-while-revalidate. It bypasses, and never caches, `/api`, `/health`, any `/open`
-navigation carrying a query, and every non-GET request. Asset fingerprinting is disabled because the hosted
+static GETs are stale-while-revalidate. It bypasses, and never caches, `/health` and every non-GET request. Asset fingerprinting is disabled because the hosted
 publish does not substitute fingerprint placeholders in `index.html`; the service worker's versioned cache
 and asset manifest provide invalidation instead.

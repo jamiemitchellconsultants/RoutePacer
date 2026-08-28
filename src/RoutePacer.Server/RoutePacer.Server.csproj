@@ -11,10 +11,7 @@
          the server collects the source index.html and its fingerprint placeholders are never substituted, so the
          published page requests _framework/blazor.webassembly and the app does not boot. -->
     <ProjectReference Include="..\RoutePacer.App\RoutePacer.App.csproj" />
-    <ProjectReference Include="..\RoutePacer.Persistence\RoutePacer.Persistence.csproj" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" />
-    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" />
   </ItemGroup>
 
 </Project>
