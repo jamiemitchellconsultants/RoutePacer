@@ -203,8 +203,10 @@ Test-driven, matching the repository's existing practice.
 
 - `StationaryDetectorTests` -- threshold reached, threshold not reached, re-anchoring on movement,
   hysteresis in both directions, no flapping across the 10 to 15 m band, escalation timing.
-- Settings cases in the existing `IndexedDbRepositoryContractTests`, including the version 2 to 3
-  upgrade leaving routes and an active ride intact.
+- Settings cases in the existing `IndexedDbRepositoryContractTests`.
+- A version 2 to 3 upgrade case in `OfflinePwaTests`, against a hand-built version 2 database. The
+  C# contract tests record JS calls and never run the module, so the upgrade is only reachable in a
+  real browser. That file also pins the object store list exactly, so it fails until updated.
 
 **Updated**
 
@@ -235,6 +237,7 @@ Test-driven, matching the repository's existing practice.
 - `src/RoutePacer.App/Rides/TrackerSnapshot.cs`
 - `src/RoutePacer.App/Pages/Track.razor`
 - `src/RoutePacer.App/Pages/ImportRoute.razor`
+- `src/RoutePacer.App/Components/PaceDelta.razor`
 - `src/RoutePacer.App/Formatting/RideFormat.cs`
 - `src/RoutePacer.App/Program.cs`
 - `src/RoutePacer.App/wwwroot/js/storage.js`
@@ -245,6 +248,7 @@ Test-driven, matching the repository's existing practice.
 - `tests/RoutePacer.App.Tests/Pages/ImportRouteTests.cs`
 - `tests/RoutePacer.App.Tests/Storage/IndexedDbRepositoryContractTests.cs`
 - `tests/RoutePacer.App.Tests/Fakes.cs`
+- `tests/RoutePacer.E2E/OfflinePwaTests.cs`
 
 ## 11. Consequences
 
