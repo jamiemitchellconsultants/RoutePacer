@@ -1,13 +1,70 @@
+/* The tracker is always true black, whatever the system theme is.
+ *
+ * This is the only screen held awake for hours, and on the OLED panel in almost every current phone
+ * an unlit pixel draws no power. The saving comes overwhelmingly from the BACKGROUND, which is most
+ * of the pixels -- so #000 rather than a dark grey, and the pace panels are unfilled: their meaning
+ * is carried by a coloured edge and coloured text rather than a large block of lit colour.
+ *
+ * The cost is real and accepted: a dark screen is harder to read in direct sunlight, because it
+ * reflects ambient light and its contrast collapses. Type is therefore large, high contrast, and
+ * sparse. Text is #f5f5f5 rather than pure white -- at these sizes pure white on black smears for
+ * some readers, and the power difference is negligible because the glyphs are a small fraction of
+ * the screen.
+ */
+.tracker-page {
+    background: #000;
+    color: #f5f5f5;
+    color-scheme: dark;
+    min-height: 100dvh;
+}
+
+/* The surrounding chrome is lit pixels too, so it goes black on this page. :has() is unsupported on
+ * very old browsers, where the tracker itself is still black and only the frame stays light. */
+body:has(.tracker-page),
+body:has(.tracker-page) .page,
+body:has(.tracker-page) main,
+body:has(.tracker-page) article.content {
+    background: #000;
+    color: #f5f5f5;
+}
+
+body:has(.tracker-page) .sidebar { background-image: none; background: #000; border-right: 1px solid #1c1c1e; }
+body:has(.tracker-page) .top-row { background: #000; border-bottom: 1px solid #1c1c1e; }
+/* The nav toggle ships as a translucent white block, which on black is a lit rectangle sitting on
+ * screen for the whole ride. Outlined instead. */
+body:has(.tracker-page) .navbar-toggler { background-color: transparent; border: 1px solid #52525b; }
+body:has(.tracker-page) .nav-scrollable { background: #000; }
+body:has(.tracker-page) .top-row a { color: #a1a1aa; }
+
 .tracker { max-width: 38rem; margin: 0 auto; }
-.pace-delta { display: grid; gap: .25rem; padding: 1.25rem; margin: .75rem 0; border-radius: .75rem; background: #eef4ff; }
+.tracker h1 { color: #f5f5f5; }
+
+.pace-delta { display: grid; gap: .25rem; padding: 1.25rem; margin: .75rem 0; border-radius: .75rem; background: transparent; }
 .pace-delta strong { font-size: clamp(2rem, 10vw, 4rem); line-height: 1; }
 .tracker button { min-height: 3rem; min-width: 7rem; margin: .25rem; }
 .pace-delta-primary strong { font-size: clamp(2.5rem, 13vw, 5rem); }
-.pace-delta-label { font-size: .9rem; text-transform: uppercase; letter-spacing: .06em; }
-.pace-delta-detail { font-size: .9rem; }
-.pace-delta-ahead { background: #e6f4ea; border-left: .5rem solid #137333; }
-.pace-delta-behind { background: #fce8e6; border-left: .5rem solid #a50e0e; }
-.pace-delta-neutral { background: #eef4ff; border-left: .5rem solid #4a5568; }
+.pace-delta-label { font-size: .9rem; text-transform: uppercase; letter-spacing: .06em; color: #a1a1aa; }
+.pace-delta-detail { font-size: .9rem; color: #a1a1aa; }
+
+/* Brightened from the light palette: #137333 and #a50e0e are unreadable on black. These sit well
+ * above 7:1 against #000, and remain distinguishable for the common colour-vision deficiencies
+ * because ahead/behind is also carried by the sign of the number, never by hue alone. */
+.pace-delta-ahead { border-left: .5rem solid #34d399; }
+.pace-delta-ahead strong { color: #34d399; }
+.pace-delta-behind { border-left: .5rem solid #fb7185; }
+.pace-delta-behind strong { color: #fb7185; }
+.pace-delta-neutral { border-left: .5rem solid #52525b; }
+.pace-delta-neutral strong { color: #f5f5f5; }
+
 .tracker-metrics { display: grid; grid-template-columns: auto 1fr; gap: .35rem 1rem; margin: 1rem 0; }
-.tracker-metrics dt { font-weight: 600; }
-.tracker-metrics dd { margin: 0; }
+.tracker-metrics dt { font-weight: 600; color: #a1a1aa; }
+.tracker-metrics dd { margin: 0; color: #f5f5f5; }
+
+/* Bootstrap's default button fills are large lit rectangles. Outlined on black costs almost
+ * nothing and keeps the target size. */
+.tracker-page .btn { background: transparent; color: #f5f5f5; border: 1px solid #52525b; }
+.tracker-page .btn-primary { border-color: #34d399; color: #34d399; }
+.tracker-page .btn-danger { border-color: #fb7185; color: #fb7185; }
+.tracker-page .btn:disabled { color: #52525b; border-color: #3f3f46; }
+.tracker-page .alert { background: transparent; border: 1px solid #52525b; color: #f5f5f5; }
+.tracker-page .alert-warning { border-color: #fbbf24; color: #fbbf24; }

@@ -6,7 +6,22 @@
 
 <PageTitle>Track ride</PageTitle>
 
-@if (!Session.Active || Session.Snapshot is null)
+<div class="tracker-page">
+
+@if (Session.State == RideSessionState.Completed && Session.Snapshot is { } finished)
+{
+    @* The only place a finished ride is ever shown. Nothing is stored, so leaving this page ends it. *@
+    <h1>Ride finished</h1>
+    <section class="ride-complete">
+        <dl class="tracker-metrics">
+            <dt>Distance</dt><dd>@RideFormat.Distance(finished.DistanceMeters)</dd>
+            <dt>Elapsed</dt><dd>@RideFormat.Elapsed(finished.Elapsed)</dd>
+        </dl>
+        <p class="pace-delta-detail">RoutePacer keeps nothing: these numbers go when you leave this page.</p>
+        <a class="btn btn-primary" href="/">Done</a>
+    </section>
+}
+else if (!Session.Active || Session.Snapshot is null)
 {
     <h1>Ready to ride</h1>
     @if (Session.Snapshot?.Error is { } previous) { <p class="alert alert-warning" role="alert">@previous</p> }
@@ -67,6 +82,7 @@ else
     </section>
 }
 @if (!string.IsNullOrWhiteSpace(error)) { <p class="alert alert-danger" role="alert">@error</p> }
+</div>
 
 @code {
     private RouteSummary? route;
