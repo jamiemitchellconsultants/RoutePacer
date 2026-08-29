@@ -1,4 +1,5 @@
 using RoutePacer.App.Browser;
+using RoutePacer.App.Rides;
 
 namespace RoutePacer.App.Formatting;
 
@@ -84,5 +85,17 @@ public static class RideFormat
         WakeLockStatus.Released => "Screen lock released",
         WakeLockStatus.Failed => "Could not keep the screen awake",
         _ => "Screen wake lock unavailable"
+    };
+
+    /// <summary>
+    /// Why the reading is frozen and what ends it. A word, not a hue: the tracker tells its states
+    /// apart by what they say and where it sits, so that they survive sunlight and colour blindness.
+    /// </summary>
+    public static string? PauseDetail(PauseMode mode) => mode switch
+    {
+        PauseMode.AutoStationary => "Paused — you stopped moving. Ride on to resume.",
+        PauseMode.Manual => "Paused. Ride on to resume.",
+        PauseMode.Suspended => "Paused — GPS off to save battery. Tap Resume.",
+        _ => null
     };
 }

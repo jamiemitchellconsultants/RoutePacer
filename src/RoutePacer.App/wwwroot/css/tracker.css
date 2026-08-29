@@ -68,3 +68,7 @@ body:has(.tracker-page) .top-row a { color: #a1a1aa; }
 .tracker-page .btn:disabled { color: #52525b; border-color: #3f3f46; }
 .tracker-page .alert { background: transparent; border: 1px solid #52525b; color: #f5f5f5; }
 .tracker-page .alert-warning { border-color: #fbbf24; color: #fbbf24; }
+
+/* A frozen reading must not look like a live one. Brightness carries that, because it survives
+ * everything hue does not -- which is why the panels have no hue to spend here. */
+.pace-delta-muted .pace-delta-value { opacity: .55; }

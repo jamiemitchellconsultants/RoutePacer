@@ -47,18 +47,23 @@ else
     <section class="tracker" aria-live="polite">
         @if (s.RouteHasTiming)
         {
-            <PaceDelta Primary="true" Label="Time" Value="@RideFormat.TimeDelta(s.Pacing?.DeltaTimeSeconds)" Tone="@RideFormat.TimeTone(s.Pacing?.DeltaTimeSeconds)" />
+            <PaceDelta Primary="true" Label="Time" Value="@RideFormat.TimeDelta(s.Pacing?.DeltaTimeSeconds)"
+                       Detail="@RideFormat.PauseDetail(s.PauseMode)" Muted="@Paused"
+                       Tone="@RideFormat.TimeTone(s.Pacing?.DeltaTimeSeconds)" />
         }
         else
         {
             <PaceDelta Primary="true" Label="Time" Value="@RideFormat.TimingUnavailable"
-                       Detail="This route has no timing, so RoutePacer tracks distance only." Tone="neutral" />
+                       Detail="@(RideFormat.PauseDetail(s.PauseMode) ?? "This route has no timing, so RoutePacer tracks distance only.")"
+                       Muted="@Paused" Tone="neutral" />
         }
-        <PaceDelta Label="Distance" Value="@RideFormat.Delta(s.Pacing?.DeltaDistanceMeters, "m")" Tone="@RideFormat.DistanceTone(s.Pacing?.DeltaDistanceMeters)" />
+        <PaceDelta Label="Distance" Value="@RideFormat.Delta(s.Pacing?.DeltaDistanceMeters, "m")"
+                   Muted="@Paused" Tone="@RideFormat.DistanceTone(s.Pacing?.DeltaDistanceMeters)" />
 
         <dl class="tracker-metrics">
             <dt>Speed</dt><dd>@RideFormat.Speed(s.Pacing?.SpeedMps)</dd>
             <dt>Elapsed</dt><dd>@RideFormat.Elapsed(s.Elapsed)</dd>
+            @if (Paused) { <dt>Paused</dt><dd>@RideFormat.Elapsed(s.PausedFor)</dd> }
             <dt>GPS accuracy</dt><dd>@RideFormat.Accuracy(s.AccuracyMeters)</dd>
             <dt>Line</dt><dd>@RideFormat.CrossTrack(s.Pacing?.Match.CrossTrackErrorMeters)</dd>
             <dt>Progress</dt><dd>@RideFormat.Progress(s.DistanceMeters, s.Route.TotalDistanceMeters)</dd>
@@ -68,7 +73,14 @@ else
 
         @if (s.Error is { } message) { <p class="alert alert-warning" role="alert">@message</p> }
 
-        <button class="btn" @onclick="TogglePause" disabled="@(busy || Transitioning)">@(s.State == RideSessionState.Paused ? "Resume" : "Pause")</button>
+        @if (s.PauseMode is PauseMode.Manual or PauseMode.Suspended)
+        {
+            <button class="btn" @onclick="Resume" disabled="@(busy || Transitioning)">Resume</button>
+        }
+        else if (s.PauseMode == PauseMode.None && !Session.AutoPauseEnabled)
+        {
+            <button class="btn" @onclick="Pause" disabled="@(busy || Transitioning)">Pause</button>
+        }
         @if (confirmingStop)
         {
             <p role="alert">Stop this ride? Tracking ends immediately, and RoutePacer keeps nothing.</p>
@@ -91,13 +103,17 @@ else
 
     private bool Transitioning => Session.State is RideSessionState.Starting or RideSessionState.Stopping;
 
+    private bool Paused => Session.Snapshot?.PauseMode is not (null or PauseMode.None);
+
     protected override void OnInitialized() => Session.SnapshotChanged += Changed;
 
     protected override async Task OnParametersSetAsync() => route = (await Routes.GetAsync())?.Summary;
 
     private async Task Start() => await Run(async () => { confirmingStart = false; await Session.StartAsync(); });
 
-    private Task TogglePause() => Run(() => Session.Snapshot?.State == RideSessionState.Paused ? Session.ResumeAsync() : Session.PauseAsync());
+    private Task Pause() => Run(Session.PauseAsync);
+
+    private Task Resume() => Run(Session.ResumeAsync);
 
     // Stays on this page: it is the only place the finished ride is shown, and there is no history
     // to send the rider to.

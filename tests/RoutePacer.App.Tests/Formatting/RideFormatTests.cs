@@ -1,6 +1,7 @@
 using FluentAssertions;
 using RoutePacer.App.Browser;
 using RoutePacer.App.Formatting;
+using RoutePacer.App.Rides;
 using RoutePacer.Core.Domain;
 using RoutePacer.Core.Tracking;
 
@@ -144,4 +145,15 @@ public sealed class RideFormatTests
         RideFormat.TimeTone(snapshot.DeltaTimeSeconds).Should().Be(expected);
         RideFormat.DistanceTone(snapshot.DeltaDistanceMeters).Should().Be(expected);
     }
+
+    [Theory]
+    [InlineData(PauseMode.AutoStationary, "stopped moving")]
+    [InlineData(PauseMode.Manual, "Paused")]
+    [InlineData(PauseMode.Suspended, "Resume")]
+    public void A_paused_ride_says_why_and_how_to_leave_it(PauseMode mode, string expected)
+        => RideFormat.PauseDetail(mode).Should().Contain(expected);
+
+    [Fact]
+    public void A_running_ride_has_no_pause_detail()
+        => RideFormat.PauseDetail(PauseMode.None).Should().BeNull();
 }
