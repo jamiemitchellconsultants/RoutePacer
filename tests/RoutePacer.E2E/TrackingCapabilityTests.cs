@@ -67,7 +67,7 @@ public sealed class TrackingCapabilityTests(PublishedAppFixture app) : IAsyncLif
         await page.Locator("button:has-text('Stop ride now')").ClickAsync();
 
         // The finished ride is readable on the page it ended on, and nowhere else.
-        await page.WaitForSelectorAsync("section.tracker, .ride-complete", new() { Timeout = BootTimeoutMs });
+        await page.WaitForSelectorAsync(".ride-complete", new() { Timeout = BootTimeoutMs });
 
         var stored = await page.EvaluateAsync<int>("""
             async () => {

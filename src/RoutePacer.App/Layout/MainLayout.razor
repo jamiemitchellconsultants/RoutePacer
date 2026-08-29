@@ -1,14 +1,14 @@
-﻿@inherits LayoutComponentBase
+@inherits LayoutComponentBase
+
+@* Three screens -- the route, importing one, and the tracker -- so there is nothing for a
+   navigation menu to choose between. The brand is the only chrome: one line, few lit pixels, and
+   it guarantees no screen is a dead end. *@
 <div class="page">
-    <div class="sidebar">
-        <NavMenu />
-    </div>
+    <header class="top-row">
+        <a class="brand" href="">RoutePacer</a>
+    </header>
 
     <main>
-        <div class="top-row px-4">
-            <a href="https://learn.microsoft.com/aspnet/core/" target="_blank">About</a>
-        </div>
-
         <article class="content px-4">
             @Body
         </article>

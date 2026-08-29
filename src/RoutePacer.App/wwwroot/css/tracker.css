@@ -28,12 +28,7 @@ body:has(.tracker-page) article.content {
     color: #f5f5f5;
 }
 
-body:has(.tracker-page) .sidebar { background-image: none; background: #000; border-right: 1px solid #1c1c1e; }
 body:has(.tracker-page) .top-row { background: #000; border-bottom: 1px solid #1c1c1e; }
-/* The nav toggle ships as a translucent white block, which on black is a lit rectangle sitting on
- * screen for the whole ride. Outlined instead. */
-body:has(.tracker-page) .navbar-toggler { background-color: transparent; border: 1px solid #52525b; }
-body:has(.tracker-page) .nav-scrollable { background: #000; }
 body:has(.tracker-page) .top-row a { color: #a1a1aa; }
 
 .tracker { max-width: 38rem; margin: 0 auto; }

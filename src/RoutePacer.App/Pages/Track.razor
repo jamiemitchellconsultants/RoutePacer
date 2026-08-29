@@ -2,7 +2,6 @@
 @implements IDisposable
 @inject RideSessionService Session
 @inject IRouteRepository Routes
-@inject NavigationManager Navigation
 
 <PageTitle>Track ride</PageTitle>
 
@@ -38,6 +37,7 @@ else if (!Session.Active || Session.Snapshot is null)
     else
     {
         <button class="btn btn-primary" @onclick="() => confirmingStart = true">Start ride</button>
+        <a class="btn" href="/">Back</a>
     }
 }
 else
@@ -99,7 +99,9 @@ else
 
     private Task TogglePause() => Run(() => Session.Snapshot?.State == RideSessionState.Paused ? Session.ResumeAsync() : Session.PauseAsync());
 
-    private Task Stop() => Run(async () => { confirmingStop = false; await Session.StopAsync(); Navigation.NavigateTo("/rides"); });
+    // Stays on this page: it is the only place the finished ride is shown, and there is no history
+    // to send the rider to.
+    private Task Stop() => Run(async () => { confirmingStop = false; await Session.StopAsync(); });
 
     private async Task Run(Func<Task> action)
     {
