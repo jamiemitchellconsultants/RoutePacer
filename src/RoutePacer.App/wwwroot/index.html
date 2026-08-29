@@ -14,6 +14,18 @@
     <link href="manifest.webmanifest" rel="manifest" />
     <link rel="apple-touch-icon" sizes="512x512" href="icon-512.png" />
     <link rel="apple-touch-icon" sizes="192x192" href="icon-192.png" />
+    <meta name="color-scheme" content="light dark" />
+    <script>
+      // Bootstrap 5.3 themes from data-bs-theme rather than the media query, so the rider's system
+      // choice is applied here and kept in step if they change it mid-ride. Inline and before the
+      // body so the page never paints light first. The tracker is black regardless -- see tracker.css.
+      (function () {
+        var dark = window.matchMedia('(prefers-color-scheme: dark)');
+        var apply = function (on) { document.documentElement.setAttribute('data-bs-theme', on ? 'dark' : 'light'); };
+        apply(dark.matches);
+        dark.addEventListener('change', function (e) { apply(e.matches); });
+      })();
+    </script>
 </head>
 
 <body>

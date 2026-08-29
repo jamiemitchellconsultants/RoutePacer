@@ -89,6 +89,29 @@ public sealed class TrackingCapabilityTests(PublishedAppFixture app) : IAsyncLif
         stored.Should().Be(0, "a finished ride is cleared, not stored");
     }
 
+    // The battery argument for this app is that an OLED pixel showing black draws no power, and the
+    // background is nearly all of the pixels. Asserting the computed colour keeps that a property of
+    // the app rather than an intention in a stylesheet.
+    [Fact]
+    public async Task The_tracker_paints_a_true_black_background()
+    {
+        await using var context = await ContextAsync(grantGeolocation: true);
+        var page = await ImportAsync(context);
+
+        await page.GotoAsync($"{app.BaseUrl}/track");
+        await page.WaitForSelectorAsync(".tracker-page", new() { Timeout = BootTimeoutMs });
+
+        var colours = await page.EvaluateAsync<string[]>("""
+            () => {
+              const body = getComputedStyle(document.body).backgroundColor;
+              const page = getComputedStyle(document.querySelector('.tracker-page')).backgroundColor;
+              return [body, page];
+            }
+            """);
+
+        colours.Should().AllSatisfy(c => c.Should().BeOneOf("rgb(0, 0, 0)", "rgba(0, 0, 0, 1)"));
+    }
+
     [Fact]
     public async Task The_tracker_shows_the_full_metric_set_while_running()
     {
