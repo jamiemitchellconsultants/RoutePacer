@@ -13,6 +13,7 @@ This document records what was asked, what was decided, why, and what followed.
 | [3](#entry-fix-blocking-defects-found-reviewing-against-the-plan-and-add-the-mandat) | 2026-08-27 | Fix blocking defects found reviewing against the plan, and add the mandated test coverage | product | **Fix the defects and build the mandated coverage, rather than ship behind a passing-but-empty suite.** Each suite is written against the behaviour the plan specifies, and each defect above has a regression test. |
 | [4](#entry-fix-accept-the-contract-s-src-rt-invocation-marker) | 2026-08-28 | fix: accept the contract's src=rt invocation marker | product | Accept `src=rt` and reject everything else, including `RouteTimer`. |
 | [5](#entry-chore-publish-the-container-for-linux-amd64-only) | 2026-08-28 | chore: publish the container for linux/amd64 only | product | Publish `linux/amd64` only, and drop `setup-qemu-action`, which existed solely to serve the emulated leg. Record why in two places rather than leaving a bare platform list. |
+| [6](#entry-chore-remove-the-routetimer-handoff-relay) | 2026-08-29 | chore: remove the RouteTimer handoff relay | product | Remove the relay, the invocation intake, and the whole server-side backend, because nothing else used it. `RoutePacer.Persistence` held one `DbSet`, one table and one migration, all the relay's. |
 
 ---
 
@@ -253,3 +254,39 @@ The gate returns to roughly the duration of the test suite plus a native image b
 This narrows what the project ships. If a second deployment target ever needs arm64, the decision is revisited by adding the platform back together with a native arm64 runner — not by reinstating QEMU emulation, which is the specific thing this removes.
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+---
+
+<a id="entry-chore-remove-the-routetimer-handoff-relay"></a>
+
+## Entry 6 — 2026-08-29 — chore: remove the RouteTimer handoff relay
+
+*Kind: product. Status: accepted.*
+
+## Context
+
+This reverses `design-and-plan-public-routetimer-handoff-relay` (PR #4) and the implementation that followed it. Per `AGENTS.md` the original entry stands unaltered; this is a `correction` citing it by slug.
+
+The relay was built to save one file transfer. Instead of saving a prediction and opening it on the phone, RouteTimer uploaded the GPX and the phone fetched it from a signed, expiring link.
+
+It cannot be made generally useful as designed. `HandoffRelayOptions.UploadCredential` is a single string and `RouteTimerInvocationOptions.PublicKeyJwk` is a single key, so the relay serves exactly **one** RouteTimer identity. A second deployment would need the shared credential — making it public and the relay an open file drop — and the private signing key, which would defeat the signature entirely. Invocation contract v1 is frozen at six query keys and rejects any additional one, so there is nowhere to put a tenant identifier without a v2 across both repositories.
+
+RoutePacer is a public repository. A feature only its author can use does not belong in one.
+
+## Decision
+
+Remove the relay, the invocation intake, and the whole server-side backend, because nothing else used it. `RoutePacer.Persistence` held one `DbSet`, one table and one migration, all the relay's. So this also deletes PostgreSQL, `DatabaseMigrationService` and the readiness gate that existed to await it, the rate limiter whose only consumer was the upload endpoint, and `SensitiveRequestLoggingFilter`, which matched only `/api/handoffs` and `/open` and would otherwise have become middleware that logs nothing.
+
+The deployment collapses to one stateless container: no database, no volume, no secret, no env file. `deploy/.env.example` now holds a single image tag.
+
+Riders keep the capability. A prediction reaches a phone by saving the file and opening it — through whatever cloud storage they already use — which needs no relay, no credential and no signing key, and which works for anyone self-hosting rather than only for this deployment.
+
+## Consequences
+
+`privacy.md` can now state without qualification that nothing leaves the device. It previously had to describe readable GPX bytes sitting in a database for up to ten minutes and explain why that was an acceptable trade. That section is gone because the situation it described is gone.
+
+Server-side state is now a decision to revisit deliberately rather than a thing already present. `DeploymentConfigurationTests` pins this: the production compose must declare no volume, no secrets, and exactly one environment variable, and `appsettings.json` must configure nothing but logging. A database reappearing is a test failure, not a silent drift.
+
+Contract v1, its frozen fixture and the coordinated rollout document are deleted; RouteTimer's side is removed separately. Anyone wanting this feature back starts from the multi-tenant design that was never built, not from these files.
+
+Deployment gets materially simpler — no LocalStack secrets, no database password rotation, no key provisioning. LocalAI's deployment script is simplified in a follow-up.
