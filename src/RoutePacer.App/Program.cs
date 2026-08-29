@@ -19,6 +19,7 @@ builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddScoped<IIndexedDbModule, IndexedDbModule>();
 builder.Services.AddScoped<IRouteRepository, IndexedDbRouteRepository>();
 builder.Services.AddScoped<IRideRepository, IndexedDbRideRepository>();
+builder.Services.AddScoped<ISettingsRepository, IndexedDbSettingsRepository>();
 builder.Services.AddSingleton<RouteNormalizer>();
 builder.Services.AddSingleton<IRouteFileParser, GpxRouteParser>();
 builder.Services.AddSingleton<IRouteFileParser, FitRouteParser>();

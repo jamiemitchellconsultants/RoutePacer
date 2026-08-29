@@ -2,7 +2,8 @@ const databaseName = "routepacer";
 // Version 2 drops the ride history stores. RoutePacer is a pacing aide, not a recorder -- the rider
 // already has something recording the ride -- so finished rides are no longer kept, and the upgrade
 // deletes any that version 1 left behind rather than stranding them on the device forever.
-const databaseVersion = 2;
+// Version 3 adds rider preferences, which outlive both the route and the ride.
+const databaseVersion = 3;
 
 function openDatabase() {
   return new Promise((resolve, reject) => {
@@ -19,6 +20,7 @@ function openDatabase() {
       // stop: nothing about a finished ride is kept.
       if (!db.objectStoreNames.contains("active_ride")) db.createObjectStore("active_ride", { keyPath: "rideId" });
       if (!db.objectStoreNames.contains("active_ride_points")) db.createObjectStore("active_ride_points", { keyPath: ["rideId", "sequence"] });
+      if (!db.objectStoreNames.contains("settings")) db.createObjectStore("settings", { keyPath: "key" });
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(new Error(`openDatabase:${request.error?.name ?? "UnknownError"}`));
@@ -87,3 +89,15 @@ export const clearRide = () => withTransaction(["active_ride", "active_ride_poin
   tx.objectStore("active_ride").clear();
   tx.objectStore("active_ride_points").clear();
 });
+
+// One row, so the key is a constant. Absent means the rider has never chosen, which the caller
+// reads as the default rather than as an error.
+export const getAutoPause = () => openDatabase().then(db => new Promise((resolve, reject) => {
+  const tx = db.transaction(["settings"]);
+  const row = tx.objectStore("settings").get("autoPause");
+  tx.oncomplete = () => { db.close(); resolve(row.result ?? null); };
+  tx.onerror = () => { db.close(); reject(transactionError(tx, "getAutoPause")); };
+}));
+
+export const saveAutoPause = settings => withTransaction(["settings"], "readwrite", tx =>
+  tx.objectStore("settings").put({ key: "autoPause", enabled: settings.enabled, thresholdSeconds: settings.thresholdSeconds }));

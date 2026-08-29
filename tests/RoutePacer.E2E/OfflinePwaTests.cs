@@ -117,7 +117,77 @@ public sealed class OfflinePwaTests(PublishedAppFixture app) : IAsyncLifetime
             """);
 
         // The version 2 upgrade drops the ride history stores. Their absence is the schema-level
-        // statement that finished rides are not kept.
-        stores.Should().BeEquivalentTo(["routes", "route_points", "active_ride", "active_ride_points"]);
+        // statement that finished rides are not kept. Version 3 adds rider preferences, which
+        // outlive both the route and the ride.
+        stores.Should().BeEquivalentTo(["routes", "route_points", "active_ride", "active_ride_points", "settings"]);
     }
+
+    [Fact]
+    public async Task A_version_2_database_gains_the_settings_store_without_losing_its_route()
+    {
+        await using var context = await NewContextAsync();
+        var page = await OpenAsync(context);
+
+        await page.EvaluateAsync(SeedVersion2Database);
+
+        // The import page reads the autopause preference when it opens, which is what makes the
+        // application open the database and run the upgrade. It needs no valid route to render, so
+        // the deliberately incomplete seeded row cannot fail the page before the upgrade happens.
+        await page.GotoAsync($"{app.BaseUrl}/import");
+        await page.WaitForSelectorAsync("input[type=file]");
+
+        var state = await page.EvaluateAsync<UpgradedDatabase>(ReadDatabaseShape);
+
+        state.Version.Should().Be(3);
+        state.Names.Should().Contain("settings");
+        state.Routes.Should().Be(1, "the upgrade is additive and must not cost the rider their route");
+    }
+
+    private sealed record UpgradedDatabase(int Version, string[] Names, int Routes);
+
+    private const string SeedVersion2Database = @"
+        async () => {
+          await new Promise((resolve, reject) => {
+            const request = indexedDB.deleteDatabase('routepacer');
+            request.onsuccess = () => resolve();
+            request.onerror = () => reject(request.error);
+          });
+          const db = await new Promise((resolve, reject) => {
+            const request = indexedDB.open('routepacer', 2);
+            request.onupgradeneeded = () => {
+              const created = request.result;
+              created.createObjectStore('routes', { keyPath: 'routeId' });
+              created.createObjectStore('route_points', { keyPath: ['routeId', 'index'] });
+              created.createObjectStore('active_ride', { keyPath: 'rideId' });
+              created.createObjectStore('active_ride_points', { keyPath: ['rideId', 'sequence'] });
+            };
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+          });
+          await new Promise((resolve, reject) => {
+            const tx = db.transaction(['routes'], 'readwrite');
+            tx.objectStore('routes').put({ routeId: 'seeded', name: 'Seeded route' });
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+          });
+          db.close();
+        }";
+
+    private const string ReadDatabaseShape = @"
+        async () => {
+          const db = await new Promise((resolve, reject) => {
+            const request = indexedDB.open('routepacer');
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+          });
+          const version = db.version;
+          const names = Array.from(db.objectStoreNames);
+          const routes = await new Promise((resolve, reject) => {
+            const request = db.transaction(['routes']).objectStore('routes').getAll();
+            request.onsuccess = () => resolve(request.result.length);
+            request.onerror = () => reject(request.error);
+          });
+          db.close();
+          return { version, names, routes };
+        }";
 }
