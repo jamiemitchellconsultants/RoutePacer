@@ -1,6 +1,8 @@
 using FluentAssertions;
 using RoutePacer.App.Browser;
 using RoutePacer.App.Formatting;
+using RoutePacer.Core.Domain;
+using RoutePacer.Core.Tracking;
 
 namespace RoutePacer.App.Tests.Formatting;
 
@@ -19,9 +21,12 @@ public sealed class RideFormatTests
     public void A_null_time_delta_says_timing_is_unavailable()
         => RideFormat.TimeDelta(null).Should().Be("Timing unavailable");
 
+    // PacingService computes routeDistance - expected, so POSITIVE is ahead here -- the opposite
+    // of the time delta. These rows previously read the other way round, which is exactly the bug:
+    // a rider 120 m up the road was told they were behind.
     [Theory]
-    [InlineData(-120, "120 m ahead")]
-    [InlineData(85, "behind 85 m")]
+    [InlineData(120, "120 m ahead")]
+    [InlineData(-85, "behind 85 m")]
     [InlineData(0, "0 m")]
     public void Distance_delta_is_signed_and_labelled(double metres, string expected)
         => RideFormat.Delta(metres, "m").Should().Be(expected);
@@ -35,8 +40,16 @@ public sealed class RideFormatTests
     [InlineData(0.0, "neutral")]
     [InlineData(-5.0, "ahead")]
     [InlineData(5.0, "behind")]
-    public void Tone_matches_the_written_label(double? value, string expected)
-        => RideFormat.DeltaTone(value).Should().Be(expected);
+    public void Time_tone_matches_the_written_label(double? seconds, string expected)
+        => RideFormat.TimeTone(seconds).Should().Be(expected);
+
+    [Theory]
+    [InlineData(null, "neutral")]
+    [InlineData(0.0, "neutral")]
+    [InlineData(5.0, "ahead")]
+    [InlineData(-5.0, "behind")]
+    public void Distance_tone_signs_itself_the_opposite_way_to_time(double? metres, string expected)
+        => RideFormat.DistanceTone(metres).Should().Be(expected);
 
     [Theory]
     [InlineData(10, "36.0 km/h")]
@@ -97,8 +110,8 @@ public sealed class RideFormatTests
     {
         RideFormat.TimeDelta(-123).Should().EndWith("ahead");
         RideFormat.TimeDelta(45).Should().StartWith("behind");
-        RideFormat.Delta(-120, "m").Should().EndWith("ahead");
-        RideFormat.Delta(85, "m").Should().StartWith("behind");
+        RideFormat.Delta(120, "m").Should().EndWith("ahead");
+        RideFormat.Delta(-85, "m").Should().StartWith("behind");
     }
 
     [Fact]
@@ -106,6 +119,28 @@ public sealed class RideFormatTests
     {
         // A minus sign is easy to miss at a glance and is not what the rider is being asked to read.
         RideFormat.TimeDelta(-123).Should().NotContain("-");
-        RideFormat.Delta(-120, "m").Should().NotContain("-");
+        RideFormat.Delta(-85, "m").Should().NotContain("-");
+    }
+
+    // The regression guard for the bug this file used to encode. It drives the real PacingService
+    // rather than restating its conventions, so if the domain ever changes which way a delta signs
+    // itself, this fails instead of the tracker quietly telling a rider the opposite of the truth.
+    [Theory]
+    [InlineData(40, "ahead")]   // 500 m along a 10 m/s route is due at 50 s; arriving at 40 s is ahead
+    [InlineData(70, "behind")]  // arriving at 70 s is behind
+    public void Both_tiles_agree_with_what_the_pacing_service_actually_computed(double secondsFromStart, string expected)
+    {
+        var route = TrackFixtures.Straight(metresPerSecond: 10);
+        var start = DateTimeOffset.UnixEpoch;
+        var snapshot = new PacingService().Calculate(
+            route,
+            new MatchedPosition(4, 500, 2, 0.5),
+            start,
+            new GeoFix(start.AddSeconds(secondsFromStart), 0, 0, 5, null));
+
+        RideFormat.TimeDelta(snapshot.DeltaTimeSeconds).Should().Contain(expected);
+        RideFormat.Delta(snapshot.DeltaDistanceMeters, "m").Should().Contain(expected);
+        RideFormat.TimeTone(snapshot.DeltaTimeSeconds).Should().Be(expected);
+        RideFormat.DistanceTone(snapshot.DeltaDistanceMeters).Should().Be(expected);
     }
 }

@@ -56,8 +56,13 @@ liveElapsed    = max(0, fix.timestamp - session.start)
 targetElapsed  = elapsedAtDistance(match.routeDistance)
 deltaTime      = liveElapsed - targetElapsed          negative is ahead
 expectedDist   = distanceAtElapsed(liveElapsed)
-deltaDistance  = match.routeDistance - expectedDist    negative is behind
+deltaDistance  = match.routeDistance - expectedDist    POSITIVE is ahead
 ```
+
+The two deltas sign themselves in **opposite** directions, which is a trap worth stating: a rider who
+is ahead has a *negative* time delta and a *positive* distance delta. `RideFormat` converts both to a
+single "lead" before wording them, because one shared direction helper applied to both is what once
+made the distance tile read backwards.
 
 On a route without timing every time-derived field is `null`; the match, speed, and cross-track error are
 always preserved, and the UI replaces the time tile with an explanation rather than showing a false zero.
