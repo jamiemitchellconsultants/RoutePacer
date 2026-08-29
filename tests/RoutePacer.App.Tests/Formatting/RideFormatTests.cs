@@ -78,10 +78,10 @@ public sealed class RideFormatTests
         => RideFormat.Progress(10, 0).Should().Be("—");
 
     [Theory]
-    [InlineData(1, "1 point saved on this device")]
-    [InlineData(42, "42 points saved on this device")]
+    [InlineData(1, "1 point this ride")]
+    [InlineData(42, "42 points this ride")]
     public void Saved_point_count_is_pluralised(long points, string expected)
-        => RideFormat.Saved(points).Should().Be(expected);
+        => RideFormat.Points(points).Should().Be(expected);
 
     [Theory]
     [InlineData(WakeLockStatus.Acquired, "Screen kept awake")]

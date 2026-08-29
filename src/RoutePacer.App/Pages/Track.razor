@@ -1,4 +1,4 @@
-@page "/track/{RouteId:guid}"
+@page "/track"
 @implements IDisposable
 @inject RideSessionService Session
 @inject IRouteRepository Routes
@@ -47,7 +47,7 @@ else
             <dt>GPS accuracy</dt><dd>@RideFormat.Accuracy(s.AccuracyMeters)</dd>
             <dt>Line</dt><dd>@RideFormat.CrossTrack(s.Pacing?.Match.CrossTrackErrorMeters)</dd>
             <dt>Progress</dt><dd>@RideFormat.Progress(s.DistanceMeters, s.Route.TotalDistanceMeters)</dd>
-            <dt>Saved</dt><dd>@RideFormat.Saved(s.SavedPointCount)</dd>
+            <dt>Points</dt><dd>@RideFormat.Points(s.SavedPointCount)</dd>
             <dt>Screen</dt><dd>@RideFormat.Wake(s.WakeStatus)</dd>
         </dl>
 
@@ -56,8 +56,8 @@ else
         <button class="btn" @onclick="TogglePause" disabled="@(busy || Transitioning)">@(s.State == RideSessionState.Paused ? "Resume" : "Pause")</button>
         @if (confirmingStop)
         {
-            <p role="alert">Stop and save this ride? Tracking ends immediately.</p>
-            <button class="btn btn-danger" @onclick="Stop" disabled="@busy">Stop and save</button>
+            <p role="alert">Stop this ride? Tracking ends immediately, and RoutePacer keeps nothing.</p>
+            <button class="btn btn-danger" @onclick="Stop" disabled="@busy">Stop ride now</button>
             <button class="btn" @onclick="() => confirmingStop = false" disabled="@busy">Keep riding</button>
         }
         else
@@ -69,7 +69,6 @@ else
 @if (!string.IsNullOrWhiteSpace(error)) { <p class="alert alert-danger" role="alert">@error</p> }
 
 @code {
-    [Parameter] public Guid RouteId { get; set; }
     private RouteSummary? route;
     private string? error;
     private bool busy, confirmingStart, confirmingStop;
@@ -78,9 +77,9 @@ else
 
     protected override void OnInitialized() => Session.SnapshotChanged += Changed;
 
-    protected override async Task OnParametersSetAsync() => route = (await Routes.GetAsync(RouteId))?.Summary;
+    protected override async Task OnParametersSetAsync() => route = (await Routes.GetAsync())?.Summary;
 
-    private async Task Start() => await Run(async () => { confirmingStart = false; await Session.StartAsync(RouteId); });
+    private async Task Start() => await Run(async () => { confirmingStart = false; await Session.StartAsync(); });
 
     private Task TogglePause() => Run(() => Session.Snapshot?.State == RideSessionState.Paused ? Session.ResumeAsync() : Session.PauseAsync());
 

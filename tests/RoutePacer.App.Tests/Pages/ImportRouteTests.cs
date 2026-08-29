@@ -47,11 +47,11 @@ public sealed class ImportRouteTests : BunitContext
 
         page.FindComponent<InputFile>().UploadFiles(InputFileContent.CreateFromText(TimedGpx, "Morning Loop.gpx"));
 
-        var saved = (await routes.ListAsync()).Should().ContainSingle().Subject;
-        saved.Name.Should().Be("Morning Loop");
+        var stored = await routes.GetAsync();
+        stored.Should().NotBeNull();
+        stored!.Summary.Name.Should().Be("Morning Loop");
         page.Markup.Should().Contain("Morning Loop").And.Contain("Timed route").And.Contain("points");
-        page.Find($"a[href='/track/{saved.RouteId:D}']").TextContent.Should().Contain("Start ride");
-        page.Find("a[href='/routes']").Should().NotBeNull();
+        page.Find("a[href='/track']").TextContent.Should().Contain("Start ride");
     }
 
     [Fact]
@@ -63,7 +63,7 @@ public sealed class ImportRouteTests : BunitContext
             InputFileContent.CreateFromText("<gpx><trk><trkseg></gpx>", "broken.gpx"));
 
         page.Find("[role=alert]").TextContent.Should().Contain("Could not import that route");
-        (await routes.ListAsync()).Should().BeEmpty();
+        (await routes.GetAsync()).Should().BeNull();
     }
 
     [Fact]

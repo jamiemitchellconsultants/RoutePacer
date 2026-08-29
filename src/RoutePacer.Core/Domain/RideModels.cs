@@ -13,3 +13,6 @@ public sealed record RidePoint(
     double AccuracyMeters, double? ProjectedRouteDistanceMeters,
     double? DeltaDistanceMeters, double? DeltaTimeSeconds,
     double? CrossTrackErrorMeters);
+
+/// <summary>An in-progress ride recovered from storage: its summary and the points recorded so far.</summary>
+public sealed record ActiveRide(RideSummary Summary, IReadOnlyList<RidePoint> Points);

@@ -37,7 +37,13 @@ public static class RideFormat
     public static string Progress(double distanceMeters, double totalDistanceMeters)
         => totalDistanceMeters <= 0 ? NoValue : $"{Math.Clamp(distanceMeters / totalDistanceMeters * 100, 0, 100):0}%";
 
-    public static string Saved(long points) => points == 1 ? "1 point saved on this device" : $"{points} points saved on this device";
+    /// <summary>
+    /// Points recorded so far in this ride. Deliberately not "saved": nothing about a finished ride
+    /// is kept, and the old wording promised a durability the application no longer offers.
+    /// </summary>
+    public static string Points(long points) => points == 1 ? "1 point this ride" : $"{points} points this ride";
+
+    public static string Distance(double metres) => metres >= 1000 ? $"{metres / 1000:0.0} km" : $"{metres:0} m";
 
     public static string Wake(WakeLockStatus status) => status switch
     {

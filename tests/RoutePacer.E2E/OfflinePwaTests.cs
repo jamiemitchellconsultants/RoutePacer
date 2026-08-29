@@ -55,7 +55,7 @@ public sealed class OfflinePwaTests(PublishedAppFixture app) : IAsyncLifetime
     }
 
     [Fact]
-    public async Task A_route_imported_online_is_still_listed_after_going_offline()
+    public async Task The_imported_route_is_still_available_after_going_offline()
     {
         await using var context = await NewContextAsync();
         var page = await OpenAsync(context);
@@ -65,10 +65,10 @@ public sealed class OfflinePwaTests(PublishedAppFixture app) : IAsyncLifetime
         await page.WaitForSelectorAsync("text=Start ride");
 
         await context.SetOfflineAsync(true);
-        await page.GotoAsync($"{app.BaseUrl}/routes");
+        await page.GotoAsync(app.BaseUrl);
 
-        await page.WaitForSelectorAsync("article.route-card");
-        (await page.Locator("article.route-card h2").InnerTextAsync()).Should().Be("timed-route");
+        await page.WaitForSelectorAsync("[data-testid=route-name]");
+        (await page.Locator("[data-testid=route-name]").InnerTextAsync()).Should().Be("timed-route");
     }
 
     [Fact]
@@ -91,7 +91,7 @@ public sealed class OfflinePwaTests(PublishedAppFixture app) : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Imported_routes_survive_a_reload_because_they_live_in_indexeddb()
+    public async Task The_imported_route_survives_a_reload_because_it_lives_in_indexeddb()
     {
         await using var context = await NewContextAsync();
         var page = await OpenAsync(context);
@@ -99,10 +99,10 @@ public sealed class OfflinePwaTests(PublishedAppFixture app) : IAsyncLifetime
         await page.Locator("input[type=file]").SetInputFilesAsync(GpxFixture);
         await page.WaitForSelectorAsync("text=Start ride");
 
-        await page.GotoAsync($"{app.BaseUrl}/routes");
+        await page.GotoAsync(app.BaseUrl);
         await page.ReloadAsync();
 
-        await page.WaitForSelectorAsync("article.route-card");
+        await page.WaitForSelectorAsync("[data-testid=route-name]");
         var stores = await page.EvaluateAsync<string[]>("""
             async () => {
               const db = await new Promise((resolve, reject) => {
@@ -116,6 +116,8 @@ public sealed class OfflinePwaTests(PublishedAppFixture app) : IAsyncLifetime
             }
             """);
 
-        stores.Should().BeEquivalentTo(["routes", "route_points", "rides", "ride_points"]);
+        // The version 2 upgrade drops the ride history stores. Their absence is the schema-level
+        // statement that finished rides are not kept.
+        stores.Should().BeEquivalentTo(["routes", "route_points", "active_ride", "active_ride_points"]);
     }
 }

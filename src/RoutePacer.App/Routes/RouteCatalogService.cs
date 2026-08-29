@@ -5,7 +5,12 @@ using RoutePacer.Core.Storage;
 
 namespace RoutePacer.App.Routes;
 
-public sealed class RouteCatalogService(RouteImportService importer, IRouteRepository routes, IRideRepository rides, TimeProvider clock)
+/// <summary>
+/// The application holds one route. Importing replaces it, and the replacement is what
+/// <see cref="IRouteRepository.SaveAsync"/> performs atomically -- there is no delete-then-import
+/// window in which the rider has no route at all.
+/// </summary>
+public sealed class RouteCatalogService(RouteImportService importer, IRouteRepository routes, TimeProvider clock)
 {
     public async Task<RouteSummary> ImportAsync(string fileName, string? displayName, long length, Stream content, DateTimeOffset importedAtUtc, CancellationToken cancellationToken = default)
     {
@@ -20,14 +25,7 @@ public sealed class RouteCatalogService(RouteImportService importer, IRouteRepos
         return await ImportAsync(file.Name, displayName, file.Size, content, clock.GetUtcNow(), cancellationToken);
     }
 
-    /// <summary>
-    /// Deleting a route would orphan the rides that reference it, so the rides must go first. Returns false
-    /// without touching storage when any ride still references the route.
-    /// </summary>
-    public async Task<bool> TryDeleteAsync(Guid routeId, CancellationToken cancellationToken = default)
-    {
-        if ((await rides.ListAsync(cancellationToken)).Any(ride => ride.RouteId == routeId)) return false;
-        await routes.DeleteAsync(routeId, cancellationToken);
-        return true;
-    }
+    public Task<RouteTrack?> GetAsync(CancellationToken cancellationToken = default) => routes.GetAsync(cancellationToken);
+
+    public Task ClearAsync(CancellationToken cancellationToken = default) => routes.ClearAsync(cancellationToken);
 }

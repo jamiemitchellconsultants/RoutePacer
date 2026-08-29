@@ -32,11 +32,11 @@ builder.Services.AddScoped<RideSessionService>();
 
 var host = builder.Build();
 
-// Rides left Running or Paused by a crash, reload, or closed tab are finalised as Interrupted before the UI
+// A ride left in progress by a crash, reload, or evicted tab is restored -- paused -- before the UI
 // renders. Recovery never resumes GPS and never requests location permission.
 await using (var scope = host.Services.CreateAsyncScope())
 {
-    try { await scope.ServiceProvider.GetRequiredService<RideSessionService>().RecoverInterruptedAsync(); }
+    try { await scope.ServiceProvider.GetRequiredService<RideSessionService>().RestoreActiveRideAsync(); }
     catch (Exception) { /* Storage is unavailable; recovery is retried on the next start. */ }
 }
 

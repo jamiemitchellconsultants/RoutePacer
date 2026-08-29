@@ -12,7 +12,7 @@ date, and evidence for each run. A row is not passed until its evidence exists.
 | 2 | Enable airplane mode, relaunch from the home screen | App starts and reaches the home page | | |
 | 3 | Import a timed GPX, start a ride | Location prompt appears only at start | | |
 | 4 | Ride 60 minutes with the screen active | Deltas update throughout; no reload or data loss | | |
-| 5 | Stop, then open ride history | Ride listed with distance, duration, average | | |
+| 5 | Stop the ride | Final distance and elapsed shown on the page; nothing kept once you leave it | | |
 
 ## Installed PWA — Android Chrome
 
@@ -28,8 +28,8 @@ date, and evidence for each run. A row is not passed until its evidence exists.
 
 | # | Step | Expected | Result | Evidence |
 |---|---|---|---|---|
-| 1 | Load, import a route, reload | Route still listed from IndexedDB | | |
-| 2 | Upgrade over a previous install | Existing routes and rides survive the upgrade | | |
+| 1 | Import a route, reload | Route still shown from IndexedDB | | |
+| 2 | Upgrade over a version 1 install | The route survives; any old ride history is gone, and the app still starts | | |
 | 3 | Go offline and reload | App shell and library load from cache | | |
 
 ## Large route
@@ -44,5 +44,15 @@ date, and evidence for each run. A row is not passed until its evidence exists.
 
 | # | Step | Expected | Result | Evidence |
 |---|---|---|---|---|
-| 1 | Routes and ride history with no network | Both fully available | | |
-| 2 | Start a ride on a previously imported route | Tracking works with no network at all | | |
+| 1 | The loaded route with no network | Fully available | | |
+| 2 | Start a ride on the loaded route | Tracking works with no network at all | | |
+
+## One route, no history
+
+| # | Step | Expected | Result | Evidence |
+|---|---|---|---|---|
+| 1 | Import a second route | Replaces the first; only the new one is offered | | |
+| 2 | Kill the tab mid-ride, reopen | Ride returns **paused** with its distance and elapsed; no location prompt until Resume | | |
+| 3 | Resume after that recovery | Tracking continues; elapsed does not jump by the time the app was closed | | |
+| 4 | Replace the route while a ride is recovered | The recovered ride is discarded rather than paced against the wrong route | | |
+| 5 | Stop a ride, then reload | No ride anywhere: no history page, and `active_ride` is empty | | |
