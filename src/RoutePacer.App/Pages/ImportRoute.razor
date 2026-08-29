@@ -1,10 +1,24 @@
 @page "/import"
 @inject RouteCatalogService Catalog
+@inject ISettingsRepository Settings
 
 <PageTitle>Import route</PageTitle>
 <h1>Import a route</h1>
 <p>Choose a timed GPX or FIT route. The file stays on this device.</p>
 <InputFile OnChange="Import" accept=".gpx,.fit" disabled="@busy" />
+<fieldset class="autopause">
+    <legend>Autopause</legend>
+    <label>
+        <input type="checkbox" checked="@autoPause.Enabled" @onchange="ToggleAutoPause" />
+        Pause the ahead/behind when I stop
+    </label>
+    <label>
+        After
+        <input type="number" min="@AutoPauseSettings.MinimumSeconds" max="@AutoPauseSettings.MaximumSeconds" step="1"
+               value="@autoPause.ThresholdSeconds" disabled="@(!autoPause.Enabled)" @onchange="ChangeThreshold" />
+        seconds standing still
+    </label>
+</fieldset>
 @if (busy) { <p role="status">Importing route…</p> }
 @if (!string.IsNullOrWhiteSpace(error)) { <p class="alert alert-danger" role="alert">@error</p> }
 @if (summary is not null)
@@ -14,6 +28,10 @@
 
 @code {
     private bool busy; private string? error; private RouteSummary? summary;
+    private AutoPauseSettings autoPause = AutoPauseSettings.Default;
+
+    protected override async Task OnInitializedAsync() => autoPause = await Settings.GetAutoPauseAsync();
+
     private async Task Import(InputFileChangeEventArgs args)
     {
         if (busy) return; busy = true; error = null; summary = null;
@@ -21,5 +39,18 @@
         catch (RouteImportException ex) { error = ex.Code switch { "too-few-points" => "The route needs at least three distinct points.", "invalid-coordinate" => "The route contains an invalid coordinate.", "zero-length-route" => "The route has no measurable distance.", "file-too-large" => "Choose a GPX or FIT file no larger than 50 MB.", _ => "Could not import that route. Check the file and try again." }; }
         catch (Exception) { error = "Could not import that route. Check the file and try again."; }
         finally { busy = false; }
+    }
+
+    private Task ToggleAutoPause(ChangeEventArgs args) => Save(autoPause with { Enabled = args.Value is true });
+
+    private Task ChangeThreshold(ChangeEventArgs args)
+        => int.TryParse(args.Value?.ToString(), out var seconds)
+            ? Save(autoPause with { ThresholdSeconds = seconds })
+            : Task.CompletedTask;
+
+    private async Task Save(AutoPauseSettings updated)
+    {
+        autoPause = updated.Clamped();
+        await Settings.SaveAutoPauseAsync(autoPause);
     }
 }

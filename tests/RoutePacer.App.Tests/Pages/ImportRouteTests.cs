@@ -4,6 +4,7 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Components.Forms;
 using Microsoft.Extensions.DependencyInjection;
 using RoutePacer.App.Routes;
+using RoutePacer.Core.Domain;
 using RoutePacer.Core.Import;
 using RoutePacer.Core.Storage;
 using ImportRoutePage = RoutePacer.App.Pages.ImportRoute;
@@ -21,6 +22,7 @@ public sealed class ImportRouteTests : BunitContext
         """;
 
     private readonly InMemoryRouteRepository routes = new();
+    private readonly InMemorySettingsRepository settings = new();
 
     public ImportRouteTests()
     {
@@ -29,6 +31,7 @@ public sealed class ImportRouteTests : BunitContext
         Services.AddSingleton(TimeProvider.System);
         Services.AddSingleton(new RouteImportService([new GpxRouteParser(), new FitRouteParser()], new RouteNormalizer()));
         Services.AddSingleton<RouteCatalogService>();
+        Services.AddSingleton<ISettingsRepository>(settings);
     }
 
     [Fact]
@@ -98,5 +101,60 @@ public sealed class ImportRouteTests : BunitContext
         page.FindComponent<InputFile>().UploadFiles(InputFileContent.CreateFromText(untimed, "untimed.gpx"));
 
         page.Markup.Should().Contain("Distance-only route");
+    }
+
+    [Fact]
+    public void Autopause_starts_off_with_the_default_threshold_shown()
+    {
+        var page = Render<ImportRoutePage>();
+
+        page.Find("input[type=checkbox]").HasAttribute("checked").Should().BeFalse();
+        var seconds = page.Find("input[type=number]");
+        seconds.GetAttribute("value").Should().Be("15");
+        seconds.HasAttribute("disabled").Should().BeTrue();
+    }
+
+    [Fact]
+    public void Enabling_autopause_saves_it_and_frees_the_threshold()
+    {
+        var page = Render<ImportRoutePage>();
+
+        page.Find("input[type=checkbox]").Change(true);
+
+        settings.AutoPause.Enabled.Should().BeTrue();
+        page.Find("input[type=number]").HasAttribute("disabled").Should().BeFalse();
+    }
+
+    [Fact]
+    public void Changing_the_threshold_saves_it()
+    {
+        var page = Render<ImportRoutePage>();
+        page.Find("input[type=checkbox]").Change(true);
+
+        page.Find("input[type=number]").Change("45");
+
+        settings.AutoPause.Should().Be(new AutoPauseSettings(true, 45));
+    }
+
+    [Fact]
+    public void A_threshold_outside_the_accepted_range_is_clamped_before_it_is_stored()
+    {
+        var page = Render<ImportRoutePage>();
+        page.Find("input[type=checkbox]").Change(true);
+
+        page.Find("input[type=number]").Change("9999");
+
+        settings.AutoPause.ThresholdSeconds.Should().Be(300);
+    }
+
+    [Fact]
+    public void A_stored_preference_is_shown_when_the_page_opens()
+    {
+        settings.AutoPause = new AutoPauseSettings(true, 90);
+
+        var page = Render<ImportRoutePage>();
+
+        page.Find("input[type=checkbox]").HasAttribute("checked").Should().BeTrue();
+        page.Find("input[type=number]").GetAttribute("value").Should().Be("90");
     }
 }
