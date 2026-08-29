@@ -10,6 +10,11 @@
  * sparse. Text is #f5f5f5 rather than pure white -- at these sizes pure white on black smears for
  * some readers, and the power difference is negligible because the glyphs are a small fraction of
  * the screen.
+ *
+ * There is no red or green here, and that is deliberate. Ahead and behind are told apart by where
+ * the word sits: "2:03 ahead" puts it after the number, "behind 0:45" puts it before. Position
+ * survives what hue does not -- sunlight washing out a dark screen, and the common colour-vision
+ * deficiencies -- and a rider glancing down at speed reads the shape of the line, not its colour.
  */
 .tracker-page {
     background: #000;
@@ -41,14 +46,12 @@ body:has(.tracker-page) .top-row a { color: #a1a1aa; }
 .pace-delta-label { font-size: .9rem; text-transform: uppercase; letter-spacing: .06em; color: #a1a1aa; }
 .pace-delta-detail { font-size: .9rem; color: #a1a1aa; }
 
-/* Brightened from the light palette: #137333 and #a50e0e are unreadable on black. These sit well
- * above 7:1 against #000, and remain distinguishable for the common colour-vision deficiencies
- * because ahead/behind is also carried by the sign of the number, never by hue alone. */
-.pace-delta-ahead { border-left: .5rem solid #34d399; }
-.pace-delta-ahead strong { color: #34d399; }
-.pace-delta-behind { border-left: .5rem solid #fb7185; }
-.pace-delta-behind strong { color: #fb7185; }
+/* One edge colour for every state. The panels differ by their words, not their hue. */
+.pace-delta-ahead,
+.pace-delta-behind,
 .pace-delta-neutral { border-left: .5rem solid #52525b; }
+.pace-delta-ahead strong,
+.pace-delta-behind strong,
 .pace-delta-neutral strong { color: #f5f5f5; }
 
 .tracker-metrics { display: grid; grid-template-columns: auto 1fr; gap: .35rem 1rem; margin: 1rem 0; }
@@ -58,7 +61,9 @@ body:has(.tracker-page) .top-row a { color: #a1a1aa; }
 /* Bootstrap's default button fills are large lit rectangles. Outlined on black costs almost
  * nothing and keeps the target size. */
 .tracker-page .btn { background: transparent; color: #f5f5f5; border: 1px solid #52525b; }
-.tracker-page .btn-primary { border-color: #34d399; color: #34d399; }
+/* Stop keeps a colour because it is a destructive action a rider must not hit by mistake, and it
+ * is a control rather than a reading. The pace panels are what stay monochrome. */
+.tracker-page .btn-primary { border-color: #f5f5f5; color: #f5f5f5; }
 .tracker-page .btn-danger { border-color: #fb7185; color: #fb7185; }
 .tracker-page .btn:disabled { color: #52525b; border-color: #3f3f46; }
 .tracker-page .alert { background: transparent; border: 1px solid #52525b; color: #f5f5f5; }
