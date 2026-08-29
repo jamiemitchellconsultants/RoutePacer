@@ -145,7 +145,7 @@ public sealed class RideSessionService : IAsyncDisposable
         previousSegment = match.SegmentIndex; lastRouteDistance = match.RouteDistanceMeters;
         if (previousFix is not null) totalDistance += GeoMath.HaversineMeters(previousFix.Latitude, previousFix.Longitude, fix.Latitude, fix.Longitude);
         previousFix = fix;
-        var pacing = pacer.Calculate(route, match, started, fix);
+        var pacing = pacer.Calculate(route, match, started, PausedSoFar(), fix);
         var point = new RidePoint(ride.RideId, sequence++, fix.TimestampUtc, fix.Latitude, fix.Longitude, fix.SpeedMps, fix.AccuracyMeters, match.RouteDistanceMeters, pacing.DeltaDistanceMeters, pacing.DeltaTimeSeconds, match.CrossTrackErrorMeters);
         await rides.AppendPointAsync(point);
         Publish(pacing);
@@ -177,11 +177,10 @@ public sealed class RideSessionService : IAsyncDisposable
 
     private async Task StopBrowserServicesAsync() { await location.StopAsync(); await wakeLock.ReleaseAsync(); }
 
+    private TimeSpan PausedSoFar() => pausedTotal + (pausedAt is { } at ? clock.GetUtcNow() - at : TimeSpan.Zero);
+
     private TimeSpan CurrentDuration()
-    {
-        var paused = pausedTotal + (pausedAt is { } at ? clock.GetUtcNow() - at : TimeSpan.Zero);
-        return TimeSpan.FromSeconds(Math.Max(0, (clock.GetUtcNow() - started - paused).TotalSeconds));
-    }
+        => TimeSpan.FromSeconds(Math.Max(0, (clock.GetUtcNow() - started - PausedSoFar()).TotalSeconds));
 
     private async Task FinalizeAsync(RideStatus status)
     {
