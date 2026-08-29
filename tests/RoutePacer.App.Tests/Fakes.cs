@@ -81,6 +81,20 @@ public sealed class InMemoryRideRepository : IRideRepository
     }
 }
 
+public sealed class InMemorySettingsRepository : ISettingsRepository
+{
+    public AutoPauseSettings AutoPause { get; set; } = AutoPauseSettings.Default;
+    public int SaveCount { get; private set; }
+
+    public Task<AutoPauseSettings> GetAutoPauseAsync(CancellationToken cancellationToken = default) => Task.FromResult(AutoPause);
+
+    public Task SaveAutoPauseAsync(AutoPauseSettings settings, CancellationToken cancellationToken = default)
+    {
+        AutoPause = settings.Clamped(); SaveCount++;
+        return Task.CompletedTask;
+    }
+}
+
 public sealed class FakeLocationService : ILocationService
 {
     public int StartCount { get; private set; }

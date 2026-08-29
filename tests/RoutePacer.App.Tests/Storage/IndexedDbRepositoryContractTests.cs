@@ -95,4 +95,49 @@ public sealed class IndexedDbRepositoryContractTests
 
         module.Calls.Should().ContainSingle(c => c.Name == "clearRide").Which.Args.Should().BeEmpty();
     }
+
+    [Fact]
+    public async Task Autopause_defaults_to_off_when_nothing_is_stored()
+    {
+        var settings = await new IndexedDbSettingsRepository(new RecordingIndexedDbModule()).GetAutoPauseAsync();
+
+        settings.Should().Be(AutoPauseSettings.Default);
+        settings.Enabled.Should().BeFalse();
+        settings.ThresholdSeconds.Should().Be(15);
+    }
+
+    [Fact]
+    public async Task A_stored_autopause_preference_is_read_back()
+    {
+        var module = new RecordingIndexedDbModule();
+        module.Results["getAutoPause"] = new IndexedDbSettingsRepository.AutoPauseDto(true, 45);
+
+        var settings = await new IndexedDbSettingsRepository(module).GetAutoPauseAsync();
+
+        settings.Should().Be(new AutoPauseSettings(true, 45));
+    }
+
+    // A hand-edited store must not produce a threshold that never fires or fires instantly.
+    [Theory]
+    [InlineData(0, 5)]
+    [InlineData(4, 5)]
+    [InlineData(9999, 300)]
+    public async Task A_threshold_outside_the_accepted_range_is_clamped_on_read(int stored, int expected)
+    {
+        var module = new RecordingIndexedDbModule();
+        module.Results["getAutoPause"] = new IndexedDbSettingsRepository.AutoPauseDto(true, stored);
+
+        (await new IndexedDbSettingsRepository(module).GetAutoPauseAsync()).ThresholdSeconds.Should().Be(expected);
+    }
+
+    [Fact]
+    public async Task Saving_autopause_clamps_before_it_reaches_storage()
+    {
+        var module = new RecordingIndexedDbModule();
+
+        await new IndexedDbSettingsRepository(module).SaveAutoPauseAsync(new AutoPauseSettings(true, 1000));
+
+        var call = module.Calls.Should().ContainSingle(c => c.Name == "saveAutoPause").Subject;
+        call.Args.Should().ContainSingle().Which.Should().Be(new AutoPauseSettings(true, 300));
+    }
 }
