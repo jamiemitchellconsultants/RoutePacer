@@ -15,6 +15,7 @@ This document records what was asked, what was decided, why, and what followed.
 | [5](#entry-chore-publish-the-container-for-linux-amd64-only) | 2026-08-28 | chore: publish the container for linux/amd64 only | product | Publish `linux/amd64` only, and drop `setup-qemu-action`, which existed solely to serve the emulated leg. Record why in two places rather than leaving a bare platform list. |
 | [6](#entry-chore-remove-the-routetimer-handoff-relay) | 2026-08-29 | chore: remove the RouteTimer handoff relay | product | Remove the relay, the invocation intake, and the whole server-side backend, because nothing else used it. `RoutePacer.Persistence` held one `DbSet`, one table and one migration, all the relay's. |
 | [7](#entry-feat-hold-one-route-and-stop-keeping-rides) | 2026-08-29 | feat: hold one route and stop keeping rides | product | **One route.** Importing replaces it, and `saveRoute` clears and writes in a single IndexedDB transaction — so a failure part way through leaves the previous route intact rather than none at all. |
+| [8](#entry-fix-remove-the-sidebar-and-stop-navigating-to-a-page-that-no-longer-exis) | 2026-08-29 | fix: remove the sidebar, and stop navigating to a page that no longer exists | product | Remove the sidebar. There is nothing for a menu to choose between, and on the tracker it was lit pixels sitting on screen for the whole ride, including a nav toggle that shipped as a translucent white block. |
 
 ---
 
@@ -327,3 +328,35 @@ Two labels that lied are fixed: **"Stop and save"** saves nothing, and the track
 `manual-validation.md` gains a section for the cases only real hardware exercises: replacing a route, killing a tab mid-ride and reopening, resuming without an elapsed jump, and replacing the route under a recovered ride.
 
 **This closes #17.** The flaky `A_ride_records_positions_and_survives_a_reload` is deleted along with the history it asserted, replaced by `Stopping_a_ride_keeps_nothing`, which reads `active_ride` directly. The underlying `busy`-guard race that issue describes is untouched and still worth its own look.
+
+---
+
+<a id="entry-fix-remove-the-sidebar-and-stop-navigating-to-a-page-that-no-longer-exis"></a>
+
+## Entry 8 — 2026-08-29 — fix: remove the sidebar, and stop navigating to a page that no longer exists
+
+*Kind: product. Status: accepted.*
+
+## Context
+
+`main` currently ships a broken finish: `Track.razor` calls `Navigation.NavigateTo("/rides")` when a ride stops, and `/rides` was deleted with the ride history in #20. A rider who completes a ride lands on **"Not Found"**.
+
+The navigation menu has the same problem in a quieter form. Its links to **Routes** and **Ride history** point at pages that no longer exist, so two of its four entries are dead.
+
+Both are leftovers from an application that had a route library and a ride history. It now has three screens — the route, importing one, and the tracker — and one of them is a full-screen instrument panel.
+
+## Decision
+
+Remove the sidebar. There is nothing for a menu to choose between, and on the tracker it was lit pixels sitting on screen for the whole ride, including a nav toggle that shipped as a translucent white block.
+
+The layout becomes a single header carrying the brand as a link home: one line, and no screen left as a dead end. The tracker's ready state gains a **Back** link, which the menu used to provide.
+
+Stopping a ride now **stays on the tracker**. That is the only place a finished ride is shown, and where #20's design already put it — there is no history to send anyone to.
+
+The header's colours come from Bootstrap's theme variables rather than fixed values. Hardcoding a light bar put light text on a light background in dark mode; a screenshot caught that, the tests did not.
+
+## Consequences
+
+Navigation is now entirely in-page: Home offers **Start ride** and **Replace route**, import offers **Start ride** and **Back**, the tracker offers **Back** before a ride and **Done** after one. Adding a fourth screen later means deciding how it is reached, rather than adding a menu row.
+
+**189 lines deleted, 26 added.** `NavMenu.razor` and its stylesheet are gone, and `MainLayout.razor.css` loses the responsive sidebar it existed to place.
