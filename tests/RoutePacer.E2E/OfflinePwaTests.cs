@@ -143,7 +143,16 @@ public sealed class OfflinePwaTests(PublishedAppFixture app) : IAsyncLifetime
         state.Routes.Should().Be(1, "the upgrade is additive and must not cost the rider their route");
     }
 
-    private sealed record UpgradedDatabase(int Version, string[] Names, int Routes);
+    // Playwright builds an evaluated object with the parameterless constructor and then assigns
+    // properties by name, so this shape cannot be a positional record.
+    private sealed class UpgradedDatabase
+    {
+        public int Version { get; set; }
+
+        public string[] Names { get; set; } = [];
+
+        public int Routes { get; set; }
+    }
 
     private const string SeedVersion2Database = @"
         async () => {
