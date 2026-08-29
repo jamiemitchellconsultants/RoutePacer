@@ -36,25 +36,23 @@ public sealed class TrackingCapabilityTests(PublishedAppFixture app) : IAsyncLif
         return context;
     }
 
-    private async Task<(IPage Page, string RouteId)> ImportAsync(IBrowserContext context)
+    private async Task<IPage> ImportAsync(IBrowserContext context)
     {
         var page = await context.NewPageAsync();
         await page.GotoAsync($"{app.BaseUrl}/import");
         await page.WaitForSelectorAsync("input[type=file]", new() { Timeout = BootTimeoutMs });
         await page.Locator("input[type=file]").SetInputFilesAsync(GpxFixture);
-        var start = page.Locator("a:has-text('Start ride')");
-        await start.WaitForAsync();
-        var href = await start.GetAttributeAsync("href");
-        return (page, href!.Split('/')[^1]);
+        await page.Locator("a:has-text('Start ride')").WaitForAsync();
+        return page;
     }
 
     [Fact]
-    public async Task A_ride_records_positions_and_survives_a_reload()
+    public async Task Stopping_a_ride_keeps_nothing()
     {
         await using var context = await ContextAsync(grantGeolocation: true);
-        var (page, routeId) = await ImportAsync(context);
+        var page = await ImportAsync(context);
 
-        await page.GotoAsync($"{app.BaseUrl}/track/{routeId}");
+        await page.GotoAsync($"{app.BaseUrl}/track");
         await page.Locator("button:has-text('Start ride')").ClickAsync();
         await page.Locator("button:has-text('Start ride now')").ClickAsync();
         await page.WaitForSelectorAsync("section.tracker");
@@ -66,28 +64,44 @@ public sealed class TrackingCapabilityTests(PublishedAppFixture app) : IAsyncLif
         await page.WaitForTimeoutAsync(1500);
 
         await page.Locator("button:has-text('Stop ride')").ClickAsync();
-        await page.Locator("button:has-text('Stop and save')").ClickAsync();
+        await page.Locator("button:has-text('Stop ride now')").ClickAsync();
 
-        await page.WaitForURLAsync("**/rides");
-        await page.ReloadAsync();
-        await page.WaitForSelectorAsync("article.ride-card", new() { Timeout = BootTimeoutMs });
+        // The finished ride is readable on the page it ended on, and nowhere else.
+        await page.WaitForSelectorAsync("section.tracker, .ride-complete", new() { Timeout = BootTimeoutMs });
 
-        (await page.Locator("article.ride-card").CountAsync()).Should().Be(1);
+        var stored = await page.EvaluateAsync<int>("""
+            async () => {
+              const db = await new Promise((resolve, reject) => {
+                const request = indexedDB.open('routepacer');
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => reject(request.error);
+              });
+              const count = await new Promise((resolve, reject) => {
+                const r = db.transaction('active_ride').objectStore('active_ride').count();
+                r.onsuccess = () => resolve(r.result);
+                r.onerror = () => reject(r.error);
+              });
+              db.close();
+              return count;
+            }
+            """);
+
+        stored.Should().Be(0, "a finished ride is cleared, not stored");
     }
 
     [Fact]
     public async Task The_tracker_shows_the_full_metric_set_while_running()
     {
         await using var context = await ContextAsync(grantGeolocation: true);
-        var (page, routeId) = await ImportAsync(context);
+        var page = await ImportAsync(context);
 
-        await page.GotoAsync($"{app.BaseUrl}/track/{routeId}");
+        await page.GotoAsync($"{app.BaseUrl}/track");
         await page.Locator("button:has-text('Start ride')").ClickAsync();
         await page.Locator("button:has-text('Start ride now')").ClickAsync();
         await page.WaitForSelectorAsync("section.tracker");
 
         var tracker = await page.Locator("section.tracker").InnerTextAsync();
-        foreach (var label in new[] { "Speed", "Elapsed", "GPS accuracy", "Line", "Progress", "Saved", "Screen" })
+        foreach (var label in new[] { "Speed", "Elapsed", "GPS accuracy", "Line", "Progress", "Points", "Screen" })
             tracker.Should().Contain(label);
 
         (await page.Locator(".pace-delta").CountAsync()).Should().Be(2);
@@ -97,9 +111,9 @@ public sealed class TrackingCapabilityTests(PublishedAppFixture app) : IAsyncLif
     public async Task Denied_location_permission_stops_the_ride_with_recovery_guidance()
     {
         await using var context = await ContextAsync(grantGeolocation: false);
-        var (page, routeId) = await ImportAsync(context);
+        var page = await ImportAsync(context);
 
-        await page.GotoAsync($"{app.BaseUrl}/track/{routeId}");
+        await page.GotoAsync($"{app.BaseUrl}/track");
         await page.Locator("button:has-text('Start ride')").ClickAsync();
         await page.Locator("button:has-text('Start ride now')").ClickAsync();
 
@@ -111,9 +125,9 @@ public sealed class TrackingCapabilityTests(PublishedAppFixture app) : IAsyncLif
     public async Task Geolocation_is_not_requested_before_the_rider_starts_a_ride()
     {
         await using var context = await ContextAsync(grantGeolocation: false);
-        var (page, routeId) = await ImportAsync(context);
+        var page = await ImportAsync(context);
 
-        await page.GotoAsync($"{app.BaseUrl}/track/{routeId}");
+        await page.GotoAsync($"{app.BaseUrl}/track");
         await page.WaitForSelectorAsync("button:has-text('Start ride')");
 
         var state = await page.EvaluateAsync<string>(

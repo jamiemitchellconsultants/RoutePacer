@@ -28,7 +28,7 @@ public sealed class IndexedDbRepositoryContractTests
         var module = new RecordingIndexedDbModule();
         module.Results["getRoute"] = new IndexedDbRouteRepository.RouteDto(track.Summary, [.. track.Points]);
 
-        var rebuilt = await new IndexedDbRouteRepository(module).GetAsync(track.Summary.RouteId);
+        var rebuilt = await new IndexedDbRouteRepository(module).GetAsync();
 
         rebuilt.Should().NotBeNull();
         rebuilt!.Summary.Should().Be(track.Summary);
@@ -37,23 +37,22 @@ public sealed class IndexedDbRepositoryContractTests
     }
 
     [Fact]
-    public async Task GetAsync_returns_null_when_the_route_is_absent()
-        => (await new IndexedDbRouteRepository(new RecordingIndexedDbModule()).GetAsync(Guid.NewGuid())).Should().BeNull();
+    public async Task GetAsync_returns_null_when_no_route_is_loaded()
+        => (await new IndexedDbRouteRepository(new RecordingIndexedDbModule()).GetAsync()).Should().BeNull();
 
+    // No identifier crosses the boundary in either direction: there is one route, and asking for it
+    // by id would imply a choice the application does not offer.
     [Fact]
-    public async Task ListAsync_returns_an_empty_list_rather_than_null()
-        => (await new IndexedDbRouteRepository(new RecordingIndexedDbModule()).ListAsync()).Should().BeEmpty();
-
-    [Fact]
-    public async Task Route_ids_cross_the_boundary_as_lowercase_dashed_strings()
+    public async Task Route_operations_take_no_identifier()
     {
         var module = new RecordingIndexedDbModule();
-        var routeId = Guid.NewGuid();
+        var repository = new IndexedDbRouteRepository(module);
 
-        await new IndexedDbRouteRepository(module).DeleteAsync(routeId);
+        await repository.GetAsync();
+        await repository.ClearAsync();
 
-        module.Calls.Should().ContainSingle(c => c.Name == "deleteRoute")
-            .Which.Args[0].Should().Be(routeId.ToString("D"));
+        module.Calls.Select(c => c.Name).Should().Equal("getRoute", "clearRoute");
+        module.Calls.Should().OnlyContain(c => c.Args.Length == 0);
     }
 
     [Fact]
@@ -72,28 +71,28 @@ public sealed class IndexedDbRepositoryContractTests
     }
 
     [Fact]
-    public async Task Completion_replaces_the_running_summary_in_the_rides_store()
+    public async Task Starting_and_updating_address_the_single_active_ride()
     {
         var module = new RecordingIndexedDbModule();
         var repository = new IndexedDbRideRepository(module);
         var running = new RideSummary(Guid.NewGuid(), Guid.NewGuid(), DateTimeOffset.UnixEpoch, null, RideStatus.Running, 0, 0, 0);
 
-        await repository.CreateAsync(running);
-        await repository.CompleteAsync(running with { Status = RideStatus.Completed, EndedAtUtc = DateTimeOffset.UnixEpoch.AddHours(1) });
+        await repository.StartAsync(running);
+        await repository.SaveAsync(running with { Status = RideStatus.Paused });
 
-        module.Calls.Select(c => c.Name).Should().Equal("createRide", "completeRide");
-        ((RideSummary)module.Calls[^1].Args[0]!).Status.Should().Be(RideStatus.Completed);
+        module.Calls.Select(c => c.Name).Should().Equal("startRide", "saveActiveRide");
+        ((RideSummary)module.Calls[^1].Args[0]!).Status.Should().Be(RideStatus.Paused);
     }
 
+    // Stopping discards the ride. If this ever became a write, a finished ride would start being
+    // kept again, which is the thing privacy.md now promises does not happen.
     [Fact]
-    public async Task Ride_deletion_addresses_the_ride_by_id()
+    public async Task Stopping_clears_the_active_ride_and_carries_nothing_with_it()
     {
         var module = new RecordingIndexedDbModule();
-        var rideId = Guid.NewGuid();
 
-        await new IndexedDbRideRepository(module).DeleteAsync(rideId);
+        await new IndexedDbRideRepository(module).ClearAsync();
 
-        module.Calls.Should().ContainSingle(c => c.Name == "deleteRide")
-            .Which.Args[0].Should().Be(rideId.ToString("D"));
+        module.Calls.Should().ContainSingle(c => c.Name == "clearRide").Which.Args.Should().BeEmpty();
     }
 }

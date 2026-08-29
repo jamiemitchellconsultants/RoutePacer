@@ -1,15 +1,17 @@
 # RoutePacer architecture
 
-RoutePacer is a hosted Blazor WebAssembly PWA. Everything a rider imports, records, and rides stays on
-their device. The server has no API and no database: it serves the published application and two health
-probes, and holds no state of any kind.
+RoutePacer is a hosted Blazor WebAssembly PWA and a pacing aide, not a ride recorder. It holds **one
+route**, compares the rider's live position with that route's planned pace, and keeps nothing about the
+ride afterwards -- whatever the rider already uses to record a ride still does that. The server has no
+API and no database: it serves the published application and two health probes, and holds no state of
+any kind.
 
 ## Project boundaries
 
 | Project | Responsibility |
 |---|---|
 | `RoutePacer.Core` | Dependency-free domain: GPX/FIT parsing, normalization, geodesy, matching, pacing. No browser or database types. |
-| `RoutePacer.App` | The PWA: IndexedDB persistence, GPS and wake-lock bridges, ride session state machine, UI. |
+| `RoutePacer.App` | The PWA: one-route IndexedDB persistence, GPS and wake-lock bridges, ride session state machine, UI. |
 | `RoutePacer.Server` | Hosts the published PWA, two health probes, and the SPA fallback. Nothing else. |
 
 ## Import and normalization
@@ -77,11 +79,28 @@ smoothed; raw fixes are retained.
 
 ## Browser persistence
 
-IndexedDB database `routepacer`, version 1, with stores `routes` (key `routeId`), `route_points`
-(composite key `[routeId, index]`), `rides` (key `rideId`), and `ride_points` (composite key
-`[rideId, sequence]`). `route_points` and `ride_points` each carry an index on their parent id. Saving or
-deleting an aggregate uses a single read-write transaction across both of its stores, so a route and its
-points can never diverge.
+IndexedDB database `routepacer`, **version 2**, with four stores: `routes` (key `routeId`) and
+`route_points` (composite key `[routeId, index]`, indexed on `routeId`), plus `active_ride` (key
+`rideId`) and `active_ride_points` (composite key `[rideId, sequence]`).
+
+`routes` holds **at most one row**. Importing clears both route stores and writes the new route in one
+read-write transaction, so a failure part way through leaves the previous route intact rather than no
+route at all, and the two stores can never diverge.
+
+`active_ride` holds **at most one in-progress ride**, and exists only so a reload or an evicted tab does
+not end a ride mid-route. Every accepted fix is written to `active_ride_points` before it is published,
+which is what makes recovery possible. Stopping clears both stores: nothing about a finished ride is
+kept.
+
+Version 2 deletes the version 1 `rides` and `ride_points` stores on upgrade. That discards any ride
+history an earlier install left behind, which is deliberate -- keeping it would contradict what the
+application now promises.
+
+A ride recovered at startup returns **Paused**, never Running: resuming starts GPS, and location
+permission is never requested before the rider asks for it. Elapsed time resumes from the last duration
+actually observed, because the interval while the application was gone was never measured and counting
+it would inflate every delta the rider reads. A recovered ride whose route has since been replaced is
+discarded, since its recorded distances refer to a route that is no longer loaded.
 
 ## Offline shell
 

@@ -1,5 +1,54 @@
 @page "/"
+@using RoutePacer.App.Formatting
+@using RoutePacer.App.Routes
+@using RoutePacer.Core.Domain
+@inject RouteCatalogService Routes
+@inject NavigationManager Navigation
+
 <PageTitle>RoutePacer</PageTitle>
 <h1>Ride your route</h1>
-<p>Import a timed GPX or FIT route, then compare your live position with its planned pace.</p>
-<p><a class="btn btn-primary" href="/import">Import a route</a> <a href="/routes">Browse routes</a></p>
+
+@if (loading)
+{
+    <p>Loading…</p>
+}
+else if (route is null)
+{
+    <p>Import a timed GPX or FIT route, then compare your live position with its planned pace.</p>
+    <p><a class="btn btn-primary" href="/import">Import a route</a></p>
+}
+else
+{
+    <section class="loaded-route">
+        <h2 data-testid="route-name">@route.Name</h2>
+        <dl>
+            <dt>Distance</dt><dd>@RideFormat.Distance(route.TotalDistanceMeters)</dd>
+            <dt>Pacing</dt><dd>@(route.PointCount > 0 && HasTiming ? "Timed" : "Distance only")</dd>
+        </dl>
+        <p>
+            <a class="btn btn-primary" data-testid="start-ride" href="/track">Start ride</a>
+            <a class="btn" data-testid="replace-route" href="/import">Replace route</a>
+        </p>
+    </section>
+    <p class="hint">
+        RoutePacer holds one route at a time. Importing another replaces this one, and RoutePacer
+        does not keep your rides — whatever you already use to record a ride still does that.
+    </p>
+}
+
+@code {
+    private RouteSummary? route;
+    private bool HasTiming;
+    private bool loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var track = await Routes.GetAsync();
+            route = track?.Summary;
+            HasTiming = track?.HasTiming ?? false;
+        }
+        finally { loading = false; }
+    }
+}

@@ -23,7 +23,7 @@ public sealed class RideSessionServiceTests
     {
         await routes.SaveAsync(track);
         var session = Create();
-        await session.StartAsync(track.Summary.RouteId);
+        await session.StartAsync();
         return session;
     }
 
@@ -31,11 +31,11 @@ public sealed class RideSessionServiceTests
         => new(Start.AddSeconds(seconds), 0, longitude, accuracy, speed);
 
     [Fact]
-    public async Task Starting_an_unknown_route_throws_and_leaves_the_session_idle()
+    public async Task Starting_with_no_route_loaded_throws_and_leaves_the_session_idle()
     {
         var session = Create();
 
-        var act = () => session.StartAsync(Guid.NewGuid());
+        var act = () => session.StartAsync();
 
         await act.Should().ThrowAsync<InvalidOperationException>();
         session.State.Should().Be(RideSessionState.Idle);
@@ -47,9 +47,9 @@ public sealed class RideSessionServiceTests
         await routes.SaveAsync(track);
         var session = Create();
 
-        await session.StartAsync(track.Summary.RouteId);
+        await session.StartAsync();
 
-        (await rides.ListAsync()).Should().ContainSingle().Which.Status.Should().Be(RideStatus.Running);
+        (await rides.GetActiveAsync())!.Summary.Status.Should().Be(RideStatus.Running);
         location.StartCount.Should().Be(1);
         session.State.Should().Be(RideSessionState.Running);
     }
@@ -61,7 +61,7 @@ public sealed class RideSessionServiceTests
         wakeLock.AcquireFailure = new InvalidOperationException("no wake lock");
         var session = Create();
 
-        await session.StartAsync(track.Summary.RouteId);
+        await session.StartAsync();
 
         session.State.Should().Be(RideSessionState.Running);
     }
@@ -73,11 +73,13 @@ public sealed class RideSessionServiceTests
         location.StartFailure = new InvalidOperationException("denied");
         var session = Create();
 
-        var act = () => session.StartAsync(track.Summary.RouteId);
+        var act = () => session.StartAsync();
 
         await act.Should().ThrowAsync<InvalidOperationException>();
         session.State.Should().Be(RideSessionState.Faulted);
-        (await rides.ListAsync()).Single().Status.Should().Be(RideStatus.Interrupted);
+        // A ride that never got GPS is discarded, not kept as a record of a failure.
+        (await rides.GetActiveAsync()).Should().BeNull();
+        session.State.Should().Be(RideSessionState.Faulted);
     }
 
     [Fact]
@@ -85,7 +87,7 @@ public sealed class RideSessionServiceTests
     {
         var session = await Started();
 
-        var act = () => session.StartAsync(track.Summary.RouteId);
+        var act = () => session.StartAsync();
 
         await act.Should().ThrowAsync<InvalidOperationException>();
     }
@@ -96,10 +98,11 @@ public sealed class RideSessionServiceTests
         var session = await Started();
         await session.StopAsync();
 
-        await session.StartAsync(track.Summary.RouteId);
+        await session.StartAsync();
 
         session.State.Should().Be(RideSessionState.Running);
-        (await rides.ListAsync()).Should().HaveCount(2);
+        // The first ride left nothing behind, and the second replaced whatever was there.
+        (await rides.GetActiveAsync())!.Summary.Status.Should().Be(RideStatus.Running);
     }
 
     [Fact]
@@ -158,7 +161,7 @@ public sealed class RideSessionServiceTests
 
         await session.StopAsync();
 
-        (await rides.ListAsync()).Single().DurationSeconds.Should().BeApproximately(TimeSpan.FromMinutes(15).TotalSeconds, 1);
+        session.Snapshot!.Elapsed.TotalSeconds.Should().BeApproximately(TimeSpan.FromMinutes(15).TotalSeconds, 1);
     }
 
     [Fact]
@@ -172,9 +175,11 @@ public sealed class RideSessionServiceTests
 
         await session.StopAsync();
 
-        var ride = (await rides.ListAsync()).Single();
-        ride.TotalDistanceMeters.Should().BeApproximately(1001, 5);
-        ride.AvgSpeedMps.Should().BeApproximately(ride.TotalDistanceMeters / ride.DurationSeconds, 1e-6);
+        // Read from the final snapshot: the ride itself is cleared on stop and never stored.
+        var final = session.Snapshot!;
+        final.DistanceMeters.Should().BeApproximately(1001, 5);
+        final.Elapsed.TotalSeconds.Should().BeApproximately(100, 1);
+        (await rides.GetActiveAsync()).Should().BeNull();
     }
 
     [Fact]
@@ -199,7 +204,7 @@ public sealed class RideSessionServiceTests
 
         session.State.Should().Be(RideSessionState.Running);
         session.Snapshot!.Error.Should().NotBeNullOrWhiteSpace();
-        (await rides.ListAsync()).Single().Status.Should().Be(RideStatus.Running);
+        (await rides.GetActiveAsync())!.Summary.Status.Should().Be(RideStatus.Running);
     }
 
     [Theory]
@@ -214,7 +219,9 @@ public sealed class RideSessionServiceTests
         session.State.Should().Be(RideSessionState.Faulted);
         location.Watching.Should().BeFalse();
         wakeLock.ReleaseCount.Should().BeGreaterThan(0);
-        (await rides.ListAsync()).Single().Status.Should().Be(RideStatus.Interrupted);
+        // A ride that never got GPS is discarded, not kept as a record of a failure.
+        (await rides.GetActiveAsync()).Should().BeNull();
+        session.State.Should().Be(RideSessionState.Faulted);
     }
 
     [Fact]
@@ -240,29 +247,60 @@ public sealed class RideSessionServiceTests
     }
 
     [Fact]
-    public async Task Recovery_marks_running_and_paused_rides_as_interrupted()
+    public async Task Recovery_restores_an_in_progress_ride_as_paused()
     {
-        var routeId = Guid.NewGuid();
-        await rides.CreateAsync(new RideSummary(Guid.NewGuid(), routeId, Start, null, RideStatus.Running, 0, 0, 0));
-        await rides.CreateAsync(new RideSummary(Guid.NewGuid(), routeId, Start, null, RideStatus.Paused, 0, 0, 0));
-        var completed = new RideSummary(Guid.NewGuid(), routeId, Start, Start.AddHours(1), RideStatus.Completed, 10, 10, 1);
-        await rides.CreateAsync(completed);
+        await routes.SaveAsync(track);
+        rides.SeedActive(
+            new RideSummary(Guid.NewGuid(), track.Summary.RouteId, Start, null, RideStatus.Running, 250, 600, 0),
+            new RidePoint(Guid.NewGuid(), 41, Start.AddSeconds(600), 0, 0.002, null, 5, 250, null, null, null));
+        clock.Advance(TimeSpan.FromMinutes(30));
+        var session = Create();
 
-        await Create().RecoverInterruptedAsync();
+        await session.RestoreActiveRideAsync();
 
-        var all = await rides.ListAsync();
-        all.Where(r => r.RideId != completed.RideId).Should().OnlyContain(r => r.Status == RideStatus.Interrupted && r.EndedAtUtc == Start);
-        all.Single(r => r.RideId == completed.RideId).Status.Should().Be(RideStatus.Completed);
+        // Paused, never Running: resuming starts GPS, and permission is the rider's to grant.
+        session.State.Should().Be(RideSessionState.Paused);
+        session.Snapshot!.DistanceMeters.Should().BeApproximately(250, 0.001);   // progress along the route, from the last recorded point
+        // Elapsed resumes from the last duration actually observed, not from wall-clock: the
+        // half hour the app was gone was never measured.
+        session.Snapshot!.Elapsed.TotalSeconds.Should().BeApproximately(600, 1);
+        session.Snapshot!.SavedPointCount.Should().Be(42);
     }
 
     [Fact]
     public async Task Recovery_never_starts_gps_or_requests_a_wake_lock()
     {
-        await rides.CreateAsync(new RideSummary(Guid.NewGuid(), Guid.NewGuid(), Start, null, RideStatus.Running, 0, 0, 0));
+        await routes.SaveAsync(track);
+        rides.SeedActive(new RideSummary(Guid.NewGuid(), track.Summary.RouteId, Start, null, RideStatus.Running, 0, 0, 0));
 
-        await Create().RecoverInterruptedAsync();
+        await Create().RestoreActiveRideAsync();
 
         location.StartCount.Should().Be(0);
         wakeLock.AcquireCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task A_recovered_ride_whose_route_was_replaced_is_discarded()
+    {
+        await routes.SaveAsync(track);
+        // Recorded against a route that is no longer loaded: its distances mean nothing now.
+        rides.SeedActive(new RideSummary(Guid.NewGuid(), Guid.NewGuid(), Start, null, RideStatus.Running, 100, 100, 1));
+        var session = Create();
+
+        await session.RestoreActiveRideAsync();
+
+        session.State.Should().Be(RideSessionState.Idle);
+        (await rides.GetActiveAsync()).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Nothing_is_restored_when_no_ride_was_in_progress()
+    {
+        await routes.SaveAsync(track);
+        var session = Create();
+
+        await session.RestoreActiveRideAsync();
+
+        session.State.Should().Be(RideSessionState.Idle);
     }
 }

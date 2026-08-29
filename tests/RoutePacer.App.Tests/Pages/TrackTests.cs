@@ -40,7 +40,7 @@ public sealed class TrackTests : BunitContext
     public async Task An_idle_tracker_asks_for_confirmation_before_requesting_location()
     {
         var track = await Seed();
-        var page = Render<TrackPage>(p => p.Add(c => c.RouteId, track.Summary.RouteId));
+        var page = Render<TrackPage>();
 
         page.Markup.Should().Contain("Ready to ride");
         page.Find("button").Click();
@@ -53,14 +53,14 @@ public sealed class TrackTests : BunitContext
     public async Task Confirming_starts_the_ride_and_renders_the_metric_hierarchy()
     {
         var track = await Seed();
-        var page = Render<TrackPage>(p => p.Add(c => c.RouteId, track.Summary.RouteId));
+        var page = Render<TrackPage>();
         page.Find("button").Click();
 
         page.FindAll("button").Single(b => b.TextContent.Contains("Start ride now")).Click();
 
         location.StartCount.Should().Be(1);
         page.Markup.Should().Contain("Speed").And.Contain("Elapsed").And.Contain("GPS accuracy")
-            .And.Contain("Line").And.Contain("Progress").And.Contain("Saved").And.Contain("Screen");
+            .And.Contain("Line").And.Contain("Progress").And.Contain("Points").And.Contain("Screen");
         // The time delta is the largest, primary tile and the distance delta comes second.
         var tiles = page.FindAll(".pace-delta");
         tiles.Should().HaveCount(2);
@@ -73,7 +73,7 @@ public sealed class TrackTests : BunitContext
     public async Task A_distance_only_route_replaces_the_time_tile_with_an_explanation()
     {
         var track = await Seed(timed: false);
-        var page = Render<TrackPage>(p => p.Add(c => c.RouteId, track.Summary.RouteId));
+        var page = Render<TrackPage>();
         page.Find("button").Click();
         page.FindAll("button").Single(b => b.TextContent.Contains("Start ride now")).Click();
 
@@ -86,7 +86,7 @@ public sealed class TrackTests : BunitContext
     public async Task Lead_and_lag_carry_a_word_as_well_as_a_tone()
     {
         var track = await Seed();
-        var page = Render<TrackPage>(p => p.Add(c => c.RouteId, track.Summary.RouteId));
+        var page = Render<TrackPage>();
         page.Find("button").Click();
         page.FindAll("button").Single(b => b.TextContent.Contains("Start ride now")).Click();
 
@@ -103,13 +103,13 @@ public sealed class TrackTests : BunitContext
     public async Task Stopping_requires_confirmation()
     {
         var track = await Seed();
-        var page = Render<TrackPage>(p => p.Add(c => c.RouteId, track.Summary.RouteId));
+        var page = Render<TrackPage>();
         page.Find("button").Click();
         page.FindAll("button").Single(b => b.TextContent.Contains("Start ride now")).Click();
 
         page.FindAll("button").Single(b => b.TextContent.Contains("Stop ride")).Click();
 
-        page.Markup.Should().Contain("Stop and save this ride?");
+        page.Markup.Should().Contain("Stop this ride?");
         session.State.Should().Be(RideSessionState.Running);
     }
 
@@ -117,7 +117,7 @@ public sealed class TrackTests : BunitContext
     public async Task Pausing_and_resuming_toggles_the_command_label()
     {
         var track = await Seed();
-        var page = Render<TrackPage>(p => p.Add(c => c.RouteId, track.Summary.RouteId));
+        var page = Render<TrackPage>();
         page.Find("button").Click();
         page.FindAll("button").Single(b => b.TextContent.Contains("Start ride now")).Click();
 
@@ -132,7 +132,7 @@ public sealed class TrackTests : BunitContext
     public async Task A_transient_gps_failure_is_surfaced_without_ending_the_ride()
     {
         var track = await Seed();
-        var page = Render<TrackPage>(p => p.Add(c => c.RouteId, track.Summary.RouteId));
+        var page = Render<TrackPage>();
         page.Find("button").Click();
         page.FindAll("button").Single(b => b.TextContent.Contains("Start ride now")).Click();
 
@@ -146,7 +146,7 @@ public sealed class TrackTests : BunitContext
     public async Task Disposing_the_page_does_not_stop_the_ride()
     {
         var track = await Seed();
-        var page = Render<TrackPage>(p => p.Add(c => c.RouteId, track.Summary.RouteId));
+        var page = Render<TrackPage>();
         page.Find("button").Click();
         page.FindAll("button").Single(b => b.TextContent.Contains("Start ride now")).Click();
 
@@ -160,7 +160,7 @@ public sealed class TrackTests : BunitContext
     public async Task The_tracker_returns_to_the_start_view_once_a_ride_is_faulted()
     {
         var track = await Seed();
-        var page = Render<TrackPage>(p => p.Add(c => c.RouteId, track.Summary.RouteId));
+        var page = Render<TrackPage>();
         page.Find("button").Click();
         page.FindAll("button").Single(b => b.TextContent.Contains("Start ride now")).Click();
 

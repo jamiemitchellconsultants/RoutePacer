@@ -23,7 +23,7 @@ public sealed class LongRideStabilityTests
         await routes.SaveAsync(track);
 
         var session = new RideSessionService(routes, rides, location, wakeLock, clock);
-        await session.StartAsync(track.Summary.RouteId);
+        await session.StartAsync();
 
         var published = 0;
         session.SnapshotChanged += _ => published++;
@@ -35,16 +35,18 @@ public sealed class LongRideStabilityTests
             await location.PushAsync(new GeoFix(Start.AddSeconds(second), 0, second * 0.00005, 5, 5.6));
         }
 
-        await session.StopAsync();
-
+        // Asserted before stopping: every accepted fix is written while the ride runs, which is what
+        // makes recovery possible. Stopping then discards all of it.
         rides.Points.Should().HaveCount(Seconds);
         rides.Points.Select(p => p.Sequence).Should().BeInAscendingOrder();
         rides.Points.Select(p => p.Sequence).Should().Equal(Enumerable.Range(0, Seconds).Select(i => (long)i));
         published.Should().BeLessThanOrEqualTo(Seconds * 4, "snapshots are capped at four per second of elapsed time");
 
-        var ride = (await rides.ListAsync()).Single();
-        ride.Status.Should().Be(RideStatus.Completed);
-        ride.DurationSeconds.Should().BeApproximately(Seconds, 1);
+        await session.StopAsync();
+
+        session.Snapshot!.Elapsed.TotalSeconds.Should().BeApproximately(Seconds, 1);
+        (await rides.GetActiveAsync()).Should().BeNull("a finished ride is not kept");
+        rides.Points.Should().BeEmpty();
     }
 
     [Fact]
@@ -58,7 +60,7 @@ public sealed class LongRideStabilityTests
         await routes.SaveAsync(track);
 
         var session = new RideSessionService(routes, rides, location, new FakeWakeLockService(), clock);
-        await session.StartAsync(track.Summary.RouteId);
+        await session.StartAsync();
 
         var published = 0;
         session.SnapshotChanged += _ => published++;

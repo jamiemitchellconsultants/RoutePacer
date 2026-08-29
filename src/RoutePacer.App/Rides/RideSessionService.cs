@@ -18,6 +18,7 @@ public sealed class RideSessionService : IAsyncDisposable
     private RouteTrack? route; private RideSummary? ride;
     private DateTimeOffset started; private DateTimeOffset? pausedAt; private TimeSpan pausedTotal;
     private GeoFix? previousFix; private double totalDistance; private int? previousSegment; private long sequence;
+    private double lastRouteDistance;
     private string? statusMessage; private double? lastAccuracy; private WakeLockStatus wakeStatus = WakeLockStatus.Unsupported;
     private DateTimeOffset lastPublished = DateTimeOffset.MinValue;
 
@@ -36,18 +37,19 @@ public sealed class RideSessionService : IAsyncDisposable
 
     public event Action<TrackerSnapshot>? SnapshotChanged;
 
-    public async Task StartAsync(Guid routeId)
+    public async Task StartAsync()
     {
         if (Active) throw new InvalidOperationException("A ride is already active.");
         Snapshot = null;
-        route = await routes.GetAsync(routeId) ?? throw new InvalidOperationException("Route not found.");
+        route = await routes.GetAsync() ?? throw new InvalidOperationException("No route is loaded.");
+        var routeId = route.Summary.RouteId;
         State = RideSessionState.Starting;
         started = clock.GetUtcNow(); pausedTotal = TimeSpan.Zero; pausedAt = null;
-        previousFix = null; totalDistance = 0; sequence = 0; previousSegment = null;
+        previousFix = null; totalDistance = 0; sequence = 0; previousSegment = null; lastRouteDistance = 0;
         statusMessage = null; lastAccuracy = null; lastPublished = DateTimeOffset.MinValue;
 
         ride = new RideSummary(Guid.NewGuid(), routeId, started, null, RideStatus.Running, 0, 0, 0);
-        await rides.CreateAsync(ride);
+        await rides.StartAsync(ride);
         // A wake lock is best effort; losing it must never prevent a ride from starting.
         try { await wakeLock.AcquireAsync(); }
         catch { wakeStatus = WakeLockStatus.Failed; }
@@ -63,7 +65,7 @@ public sealed class RideSessionService : IAsyncDisposable
         if (ride is not null)
         {
             ride = ride with { Status = RideStatus.Paused, DurationSeconds = CurrentDuration().TotalSeconds, TotalDistanceMeters = totalDistance };
-            await rides.CompleteAsync(ride);
+            await rides.SaveAsync(ride);
         }
         Publish(Snapshot?.Pacing, force: true);
     }
@@ -76,7 +78,7 @@ public sealed class RideSessionService : IAsyncDisposable
         try { await wakeLock.AcquireAsync(); } catch { wakeStatus = WakeLockStatus.Failed; }
         await location.StartAsync(OnFixAsync, OnLocationErrorAsync);
         State = RideSessionState.Running;
-        if (ride is not null) { ride = ride with { Status = RideStatus.Running }; await rides.CompleteAsync(ride); }
+        if (ride is not null) { ride = ride with { Status = RideStatus.Running }; await rides.SaveAsync(ride); }
         Publish(Snapshot?.Pacing, force: true);
     }
 
@@ -88,12 +90,49 @@ public sealed class RideSessionService : IAsyncDisposable
         await FinalizeAsync(RideStatus.Completed);
     }
 
-    /// <summary>Marks rides left Running or Paused by a crash or reload as Interrupted. Never resumes GPS.</summary>
-    public async Task RecoverInterruptedAsync()
+    /// <summary>
+    /// Restores a ride left in progress by a crash, a reload, or an evicted tab. It comes back
+    /// <see cref="RideSessionState.Paused"/>, never Running: resuming starts GPS, and location
+    /// permission is never requested before the rider asks for it.
+    /// </summary>
+    public async Task RestoreActiveRideAsync()
     {
-        foreach (var item in await rides.ListAsync())
-            if (item.Status is RideStatus.Running or RideStatus.Paused)
-                await rides.CompleteAsync(item with { Status = RideStatus.Interrupted, EndedAtUtc = clock.GetUtcNow() });
+        if (Active) return;
+        var active = await rides.GetActiveAsync();
+        if (active is null) return;
+        if (active.Summary.Status is not (RideStatus.Running or RideStatus.Paused)) { await rides.ClearAsync(); return; }
+
+        route = await routes.GetAsync();
+        if (route is null || route.Summary.RouteId != active.Summary.RouteId)
+        {
+            // The route was replaced while the ride was away. Its recorded points are measured
+            // against a route that is no longer here, so the ride cannot be resumed meaningfully.
+            await rides.ClearAsync();
+            return;
+        }
+
+        ride = active.Summary with { Status = RideStatus.Paused };
+        started = active.Summary.StartedAtUtc;
+        totalDistance = active.Summary.TotalDistanceMeters;
+        sequence = active.Points.Count == 0 ? 0 : active.Points[^1].Sequence + 1;
+        previousSegment = null;   // Rebuilt by the next match; a full scan once costs less than storing it.
+        previousFix = null;
+        // Progress along the route survives, so the recovered ride shows where it had reached
+        // rather than snapping the rider back to the start line.
+        lastRouteDistance = active.Points.Count == 0 ? 0 : active.Points[^1].ProjectedRouteDistanceMeters ?? 0;
+        filter.Reset();
+
+        // Elapsed resumes from the last duration actually observed. The gap while the app was gone
+        // was not measured, and counting it would silently inflate every delta the rider reads.
+        var now = clock.GetUtcNow();
+        pausedTotal = now - started - TimeSpan.FromSeconds(active.Summary.DurationSeconds);
+        if (pausedTotal < TimeSpan.Zero) pausedTotal = TimeSpan.Zero;
+        pausedAt = now;
+
+        statusMessage = "Ride recovered and paused. Resume when you are ready.";
+        State = RideSessionState.Paused;
+        await rides.SaveAsync(ride);
+        Publish(null, force: true);
     }
 
     private async Task OnFixAsync(GeoFix fix)
@@ -103,7 +142,7 @@ public sealed class RideSessionService : IAsyncDisposable
         var match = matcher.Match(route, fix, previousSegment);
         if (match is null) { statusMessage = "Off route — waiting to rejoin."; Publish(Snapshot?.Pacing); return; }
         statusMessage = null;
-        previousSegment = match.SegmentIndex;
+        previousSegment = match.SegmentIndex; lastRouteDistance = match.RouteDistanceMeters;
         if (previousFix is not null) totalDistance += GeoMath.HaversineMeters(previousFix.Latitude, previousFix.Longitude, fix.Latitude, fix.Longitude);
         previousFix = fix;
         var pacing = pacer.Calculate(route, match, started, fix);
@@ -156,7 +195,9 @@ public sealed class RideSessionService : IAsyncDisposable
             DurationSeconds = duration.TotalSeconds,
             AvgSpeedMps = duration.TotalSeconds > 0 ? totalDistance / duration.TotalSeconds : 0
         };
-        await rides.CompleteAsync(ride);
+        // The finished ride is cleared, not stored. It stays in Snapshot so the rider can read the
+        // final numbers on this page, and goes when they leave it.
+        await rides.ClearAsync();
         State = status == RideStatus.Completed ? RideSessionState.Completed : RideSessionState.Faulted;
         Publish(Snapshot?.Pacing, force: true);
     }
@@ -164,7 +205,7 @@ public sealed class RideSessionService : IAsyncDisposable
     private void Publish(PacingSnapshot? pacing, bool force = false)
     {
         if (route is null) return;
-        Snapshot = new TrackerSnapshot(State, route.Summary, pacing, pacing?.Match.RouteDistanceMeters ?? Snapshot?.DistanceMeters ?? 0,
+        Snapshot = new TrackerSnapshot(State, route.Summary, pacing, pacing?.Match.RouteDistanceMeters ?? lastRouteDistance,
             CurrentDuration(), route.HasTiming, sequence, lastAccuracy, wakeStatus, statusMessage);
         var now = clock.GetUtcNow();
         if (!force && now - lastPublished < PublishInterval) return;

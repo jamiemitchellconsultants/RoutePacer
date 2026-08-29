@@ -31,45 +31,53 @@ public sealed class RecordingIndexedDbModule : IIndexedDbModule
 
 public sealed class InMemoryRouteRepository : IRouteRepository
 {
-    private readonly Dictionary<Guid, RouteTrack> tracks = [];
-    public int DeleteCount { get; private set; }
+    private RouteTrack? track;
+    public int ClearCount { get; private set; }
 
     public Task SaveAsync(RouteTrack route, CancellationToken cancellationToken = default)
     {
-        tracks[route.Summary.RouteId] = route;
+        // Replaces, exactly as the IndexedDB implementation does in one transaction.
+        track = route;
         return Task.CompletedTask;
     }
 
-    public Task<IReadOnlyList<RouteSummary>> ListAsync(CancellationToken cancellationToken = default)
-        => Task.FromResult<IReadOnlyList<RouteSummary>>(tracks.Values.Select(t => t.Summary).OrderByDescending(s => s.ImportedAtUtc).ToArray());
+    public Task<RouteTrack?> GetAsync(CancellationToken cancellationToken = default) => Task.FromResult(track);
 
-    public Task<RouteTrack?> GetAsync(Guid routeId, CancellationToken cancellationToken = default)
-        => Task.FromResult(tracks.GetValueOrDefault(routeId));
-
-    public Task DeleteAsync(Guid routeId, CancellationToken cancellationToken = default)
+    public Task ClearAsync(CancellationToken cancellationToken = default)
     {
-        DeleteCount++; tracks.Remove(routeId);
+        ClearCount++; track = null;
         return Task.CompletedTask;
     }
 }
 
 public sealed class InMemoryRideRepository : IRideRepository
 {
-    private readonly Dictionary<Guid, RideSummary> summaries = [];
+    private RideSummary? active;
     public List<RidePoint> Points { get; } = [];
-    public int DeleteCount { get; private set; }
+    public int ClearCount { get; private set; }
 
-    public Task CreateAsync(RideSummary ride, CancellationToken cancellationToken = default) { summaries[ride.RideId] = ride; return Task.CompletedTask; }
-    public Task AppendPointAsync(RidePoint point, CancellationToken cancellationToken = default) { Points.Add(point); return Task.CompletedTask; }
-    public Task CompleteAsync(RideSummary ride, CancellationToken cancellationToken = default) { summaries[ride.RideId] = ride; return Task.CompletedTask; }
-    public Task<IReadOnlyList<RideSummary>> ListAsync(CancellationToken cancellationToken = default)
-        => Task.FromResult<IReadOnlyList<RideSummary>>(summaries.Values.OrderByDescending(s => s.StartedAtUtc).ToArray());
-    public Task<IReadOnlyList<RidePoint>> GetPointsAsync(Guid rideId, CancellationToken cancellationToken = default)
-        => Task.FromResult<IReadOnlyList<RidePoint>>(Points.Where(p => p.RideId == rideId).OrderBy(p => p.Sequence).ToArray());
-    public Task DeleteAsync(Guid rideId, CancellationToken cancellationToken = default)
+    public Task StartAsync(RideSummary ride, CancellationToken cancellationToken = default)
     {
-        DeleteCount++; summaries.Remove(rideId); Points.RemoveAll(p => p.RideId == rideId);
+        active = ride; Points.Clear();
         return Task.CompletedTask;
+    }
+
+    public Task SaveAsync(RideSummary ride, CancellationToken cancellationToken = default) { active = ride; return Task.CompletedTask; }
+    public Task AppendPointAsync(RidePoint point, CancellationToken cancellationToken = default) { Points.Add(point); return Task.CompletedTask; }
+
+    public Task<ActiveRide?> GetActiveAsync(CancellationToken cancellationToken = default)
+        => Task.FromResult(active is null ? null : new ActiveRide(active, Points.OrderBy(p => p.Sequence).ToArray()));
+
+    public Task ClearAsync(CancellationToken cancellationToken = default)
+    {
+        ClearCount++; active = null; Points.Clear();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Seeds an in-progress ride as a crash would have left it, for recovery tests.</summary>
+    public void SeedActive(RideSummary ride, params RidePoint[] points)
+    {
+        active = ride; Points.Clear(); Points.AddRange(points);
     }
 }
 

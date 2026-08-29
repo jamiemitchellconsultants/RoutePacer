@@ -2,14 +2,24 @@
 
 ## What stays on your device
 
-Everything. Imported routes, every ride you record, and all GPS positions are stored only in your
-browser's IndexedDB on the device you used. They are not uploaded, synchronised, or backed up. Clearing
-the site's data, or deleting a route or ride in the app, removes them permanently — there is nowhere else
-to recover them from.
+One route, and only while you keep it. RoutePacer holds a single imported route in your browser's
+IndexedDB; importing another replaces it. Nothing is uploaded, synchronised, or backed up.
+
+## What is not kept at all
+
+Your rides. RoutePacer is a pacing aide, not a recorder — whatever you already use to record a ride
+still does that, and this app does not duplicate it.
+
+While a ride is running, positions are written to your browser so that a reload, a crash, or the phone
+evicting the tab does not end the ride mid-route. When you stop, that is deleted. There is no ride
+history, no export, and no way to look up what you rode: the numbers are on screen while you are on that
+page, and then they are gone.
+
+Upgrading from an earlier version deletes any ride history that version stored.
 
 Tracking runs entirely in the browser. Location permission is requested only after you explicitly start a
-ride, and the app asks for it at that moment rather than on first load. Positions are matched and paced
-locally; nothing about your position leaves the device.
+ride — and a ride recovered after a crash comes back paused, so reopening the app never restarts GPS on
+its own. Positions are matched and paced locally; nothing about your position leaves the device.
 
 ## What leaves your device
 
@@ -36,5 +46,5 @@ discards access logs so nothing reaches ingress either.
 
 ## What has no backup
 
-Nothing on the server needs one — it holds no state. Your routes and rides live on your device only, so
-your own device backup is the only copy that exists. If you clear the site's data, they are gone.
+Nothing on the server needs one — it holds no state. Your route lives on your device only. If you clear
+the site's data it is gone, and so is anything about a ride in progress.
