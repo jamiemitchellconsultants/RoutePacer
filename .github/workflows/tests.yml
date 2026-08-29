@@ -1,0 +1,20 @@
+name: tests
+on:
+  pull_request:
+  workflow_call:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - run: dotnet restore RoutePacer.slnx
+      - run: dotnet build RoutePacer.slnx -c Release --no-restore
+      # Microsoft.Playwright.Xunit only drops playwright.ps1 into the build output; it never
+      # downloads a browser. Without this the whole E2E project fails at LaunchAsync.
+      - run: pwsh tests/RoutePacer.E2E/bin/Release/net10.0/playwright.ps1 install --with-deps chromium
+      - run: dotnet test RoutePacer.slnx -c Release --no-build
