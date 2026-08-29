@@ -170,4 +170,67 @@ public sealed class TrackTests : BunitContext
 
         page.Markup.Should().Contain("Ready to ride").And.Contain("permission was denied");
     }
+
+    private async Task<IRenderedComponent<TrackPage>> Riding()
+    {
+        await Seed();
+        var page = Render<TrackPage>();
+        page.Find("button").Click();
+        page.FindAll("button").Single(b => b.TextContent.Contains("Start ride now")).Click();
+        return page;
+    }
+
+    [Fact]
+    public async Task A_pause_button_is_offered_when_autopause_is_off()
+    {
+        var page = await Riding();
+
+        page.FindAll("button").Should().Contain(b => b.TextContent.Contains("Pause"));
+    }
+
+    [Fact]
+    public async Task No_pause_button_is_offered_when_autopause_is_on()
+    {
+        settings.AutoPause = new AutoPauseSettings(true, 20);
+        var page = await Riding();
+
+        page.FindAll("button").Should().NotContain(b => b.TextContent.Trim() == "Pause");
+    }
+
+    [Fact]
+    public async Task A_paused_tracker_says_it_is_paused_and_dims_the_frozen_reading()
+    {
+        var page = await Riding();
+
+        page.FindAll("button").Single(b => b.TextContent.Trim() == "Pause").Click();
+
+        page.Markup.Should().Contain("Paused");
+        page.FindAll(".pace-delta-muted").Should().NotBeEmpty();
+        page.FindAll("button").Should().Contain(b => b.TextContent.Contains("Resume"));
+    }
+
+    [Fact]
+    public async Task A_suspended_tracker_offers_resume_even_when_autopause_is_on()
+    {
+        settings.AutoPause = new AutoPauseSettings(true, 20);
+        var page = await Riding();
+        await location.PushAsync(new GeoFix(Start, 0, 0, 5, null));
+        await location.PushAsync(new GeoFix(Start.AddSeconds(25), 0, 0.00005, 5, null));
+        await location.PushAsync(new GeoFix(Start.AddSeconds(310), 0, 0.00005, 5, null));
+
+        page.Render();
+
+        page.FindAll("button").Should().Contain(b => b.TextContent.Contains("Resume"));
+    }
+
+    // Stopping a ride must stay reachable in every pause mode.
+    [Fact]
+    public async Task Stop_ride_survives_a_pause()
+    {
+        var page = await Riding();
+
+        page.FindAll("button").Single(b => b.TextContent.Trim() == "Pause").Click();
+
+        page.FindAll("button").Should().Contain(b => b.TextContent.Contains("Stop ride"));
+    }
 }

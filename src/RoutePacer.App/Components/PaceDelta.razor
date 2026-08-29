@@ -1,4 +1,4 @@
-<div class="pace-delta pace-delta-@Tone @(Primary ? "pace-delta-primary" : null)">
+<div class="pace-delta pace-delta-@Tone @(Primary ? "pace-delta-primary" : null) @(Muted ? "pace-delta-muted" : null)">
     <span class="pace-delta-label">@Label</span>
     <strong class="pace-delta-value">@Value</strong>
     @if (!string.IsNullOrWhiteSpace(Detail)) { <span class="pace-delta-detail">@Detail</span> }
@@ -9,4 +9,5 @@
     [Parameter] public string? Detail { get; set; }
     [Parameter] public string Tone { get; set; } = "neutral";
     [Parameter] public bool Primary { get; set; }
+    [Parameter] public bool Muted { get; set; }
 }
