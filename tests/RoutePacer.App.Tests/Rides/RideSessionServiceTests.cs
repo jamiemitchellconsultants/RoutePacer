@@ -15,9 +15,10 @@ public sealed class RideSessionServiceTests
     private readonly FakeLocationService location = new();
     private readonly FakeWakeLockService wakeLock = new();
     private readonly FakeTimeProvider clock = new(Start);
+    private readonly InMemorySettingsRepository settings = new();
     private readonly RouteTrack track = TrackFixtures.Straight();
 
-    private RideSessionService Create() => new(routes, rides, location, wakeLock, clock);
+    private RideSessionService Create() => new(routes, rides, location, wakeLock, settings, clock);
 
     private async Task<RideSessionService> Started()
     {
@@ -400,5 +401,117 @@ public sealed class RideSessionServiceTests
         await location.PushAsync(Fix(360, 0.005));
 
         session.Snapshot!.Pacing!.DeltaTimeSeconds.Should().BeApproximately(before!.Value, 1);
+    }
+
+    [Fact]
+    public async Task Standing_still_past_the_threshold_pauses_the_ride_when_autopause_is_on()
+    {
+        settings.AutoPause = new AutoPauseSettings(true, 20);
+        var session = await Started();
+        await location.PushAsync(Fix(0, 0));
+
+        await location.PushAsync(Fix(25, 0.00005));
+
+        session.State.Should().Be(RideSessionState.Paused);
+        session.PauseMode.Should().Be(PauseMode.AutoStationary);
+        location.Watching.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Standing_still_changes_nothing_when_autopause_is_off()
+    {
+        var session = await Started();
+        await location.PushAsync(Fix(0, 0));
+
+        await location.PushAsync(Fix(600, 0.00005));
+
+        session.State.Should().Be(RideSessionState.Running);
+    }
+
+    [Fact]
+    public async Task A_stop_shorter_than_the_threshold_does_not_pause()
+    {
+        settings.AutoPause = new AutoPauseSettings(true, 60);
+        var session = await Started();
+        await location.PushAsync(Fix(0, 0));
+
+        await location.PushAsync(Fix(45, 0.00005));
+
+        session.State.Should().Be(RideSessionState.Running);
+    }
+
+    [Fact]
+    public async Task An_autopaused_ride_resumes_when_the_rider_sets_off()
+    {
+        settings.AutoPause = new AutoPauseSettings(true, 20);
+        var session = await Started();
+        await location.PushAsync(Fix(0, 0));
+        await location.PushAsync(Fix(25, 0.00005));
+
+        await location.PushAsync(Fix(60, 0.00015));
+
+        session.State.Should().Be(RideSessionState.Running);
+        session.PauseMode.Should().Be(PauseMode.None);
+    }
+
+    // Holding the watch and the wake lock through a cafe stop is the battery cost a movement-ending
+    // pause would otherwise introduce. Five minutes is past any traffic light.
+    [Fact]
+    public async Task A_long_stop_gives_back_the_gps_watch_and_needs_a_tap_to_come_out_of()
+    {
+        var session = await Started();
+        await location.PushAsync(Fix(0, 0));
+        await session.PauseAsync();
+
+        await location.PushAsync(Fix(310, 0.00005));
+
+        session.PauseMode.Should().Be(PauseMode.Suspended);
+        location.Watching.Should().BeFalse();
+        wakeLock.ReleaseCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Coming_out_of_a_long_stop_restarts_the_watch_and_forgets_the_stale_fix()
+    {
+        var session = await Started();
+        await location.PushAsync(Fix(0, 0));
+        await session.PauseAsync();
+        await location.PushAsync(Fix(310, 0.00005));
+
+        await session.ResumeAsync();
+
+        location.StartCount.Should().Be(2);
+        location.Watching.Should().BeTrue();
+        session.State.Should().Be(RideSessionState.Running);
+
+        // The first fix after the gap is far from the last one seen and must not be read as a spike.
+        await location.PushAsync(Fix(320, 0.004));
+        rides.Points.Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public async Task Escalation_counts_from_when_the_rider_stopped_not_from_when_the_pause_began()
+    {
+        settings.AutoPause = new AutoPauseSettings(true, 20);
+        var session = await Started();
+        await location.PushAsync(Fix(0, 0));
+        await location.PushAsync(Fix(25, 0.00005));
+        session.PauseMode.Should().Be(PauseMode.AutoStationary);
+
+        // Five minutes after the rider stopped, not five minutes after the pause was entered.
+        await location.PushAsync(Fix(305, 0.00005));
+
+        session.PauseMode.Should().Be(PauseMode.Suspended);
+    }
+
+    [Fact]
+    public async Task Unreadable_settings_do_not_stop_a_ride_starting()
+    {
+        await routes.SaveAsync(track);
+        var session = new RideSessionService(routes, rides, location, wakeLock, new ThrowingSettingsRepository(), clock);
+
+        await session.StartAsync();
+
+        session.State.Should().Be(RideSessionState.Running);
     }
 }

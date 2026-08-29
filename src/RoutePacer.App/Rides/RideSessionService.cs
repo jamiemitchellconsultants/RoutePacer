@@ -10,11 +10,21 @@ public sealed class RideSessionService : IAsyncDisposable
     /// <summary>Snapshots reach the UI at most this often. Every accepted fix is still persisted.</summary>
     public static readonly TimeSpan PublishInterval = TimeSpan.FromMilliseconds(250);
 
+    /// <summary>
+    /// How long a rider may stand still before the pause gives the GPS watch back. Holding it
+    /// through a long stop is the battery cost of a pause that ends on movement; a fixed five
+    /// minutes is past any traffic light and short of any real break.
+    /// </summary>
+    public static readonly TimeSpan SuspendAfter = TimeSpan.FromMinutes(5);
+
     private readonly IRouteRepository routes; private readonly IRideRepository rides;
-    private readonly ILocationService location; private readonly IWakeLockService wakeLock; private readonly TimeProvider clock;
+    private readonly ILocationService location; private readonly IWakeLockService wakeLock;
+    private readonly ISettingsRepository settings; private readonly TimeProvider clock;
     private readonly RouteMatcher matcher; private readonly PacingService pacer;
     private readonly GpsSpikeFilter filter = new();
     private readonly StationaryDetector stationary = new();
+
+    private AutoPauseSettings autoPause = AutoPauseSettings.Default;
 
     private RouteTrack? route; private RideSummary? ride;
     private DateTimeOffset started; private DateTimeOffset? pausedAt; private TimeSpan pausedTotal;
@@ -24,9 +34,10 @@ public sealed class RideSessionService : IAsyncDisposable
     private DateTimeOffset lastPublished = DateTimeOffset.MinValue;
     private PauseMode pauseMode = PauseMode.None;
 
-    public RideSessionService(IRouteRepository routes, IRideRepository rides, ILocationService location, IWakeLockService wakeLock, TimeProvider clock, RouteMatcher? matcher = null, PacingService? pacer = null)
+    public RideSessionService(IRouteRepository routes, IRideRepository rides, ILocationService location, IWakeLockService wakeLock, ISettingsRepository settings, TimeProvider clock, RouteMatcher? matcher = null, PacingService? pacer = null)
     {
-        this.routes = routes; this.rides = rides; this.location = location; this.wakeLock = wakeLock; this.clock = clock;
+        this.routes = routes; this.rides = rides; this.location = location; this.wakeLock = wakeLock;
+        this.settings = settings; this.clock = clock;
         this.matcher = matcher ?? new RouteMatcher(); this.pacer = pacer ?? new PacingService();
         wakeLock.StatusChanged += OnWakeStatusChanged;
     }
@@ -34,6 +45,7 @@ public sealed class RideSessionService : IAsyncDisposable
     public RideSessionState State { get; private set; } = RideSessionState.Idle;
     public TrackerSnapshot? Snapshot { get; private set; }
     public PauseMode PauseMode => pauseMode;
+    public bool AutoPauseEnabled => autoPause.Enabled;
 
     /// <summary>A finished or faulted session is not active, so the rider can start another ride without reloading.</summary>
     public bool Active => State is RideSessionState.Starting or RideSessionState.Running or RideSessionState.Paused or RideSessionState.Stopping;
@@ -51,6 +63,11 @@ public sealed class RideSessionService : IAsyncDisposable
         previousFix = null; totalDistance = 0; sequence = 0; previousSegment = null; lastRouteDistance = 0;
         statusMessage = null; lastAccuracy = null; lastPublished = DateTimeOffset.MinValue;
         stationary.Reset(); pauseMode = PauseMode.None;
+
+        // Read once. A preference that changed underneath a running ride would alter pacing with no
+        // cause the rider could see. Unreadable storage is not a reason to refuse a ride.
+        try { autoPause = await settings.GetAutoPauseAsync(); }
+        catch { autoPause = AutoPauseSettings.Default; }
 
         ride = new RideSummary(Guid.NewGuid(), routeId, started, null, RideStatus.Running, 0, 0, 0);
         await rides.StartAsync(ride);
@@ -188,7 +205,9 @@ public sealed class RideSessionService : IAsyncDisposable
 
         // Observed on every running fix whether or not autopause is on: a manual pause needs an
         // anchor to measure the rider's departure from.
-        stationary.Observe(fix);
+        var stillFor = stationary.Observe(fix);
+        if (autoPause.Enabled && stillFor.TotalSeconds >= autoPause.ThresholdSeconds)
+            await EnterWatchingPauseAsync(PauseMode.AutoStationary);
     }
 
     /// <summary>
@@ -202,7 +221,15 @@ public sealed class RideSessionService : IAsyncDisposable
         lastAccuracy = fix.AccuracyMeters;
         if (!stationary.IsAnchored) { stationary.Observe(fix); Publish(Snapshot?.Pacing); return; }
         if (stationary.MetersFromAnchor(fix) > StationaryDetector.ResumeRadiusMeters) { await ResumeOnMovementAsync(fix); return; }
+        if (stationary.StationaryTime(fix) >= SuspendAfter) { await SuspendAsync(); return; }
         Publish(Snapshot?.Pacing);
+    }
+
+    private async Task SuspendAsync()
+    {
+        await StopBrowserServicesAsync();
+        pauseMode = PauseMode.Suspended;
+        Publish(Snapshot?.Pacing, force: true);
     }
 
     // Only a denied or absent geolocation capability is terminal. watchPosition reports a timeout for every

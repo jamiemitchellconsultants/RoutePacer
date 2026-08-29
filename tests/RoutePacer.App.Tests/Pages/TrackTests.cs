@@ -19,13 +19,15 @@ public sealed class TrackTests : BunitContext
     private readonly FakeLocationService location = new();
     private readonly FakeWakeLockService wakeLock = new();
     private readonly FakeTimeProvider clock = new(Start);
+    private readonly InMemorySettingsRepository settings = new();
     private readonly RideSessionService session;
 
     public TrackTests()
     {
-        session = new RideSessionService(routes, rides, location, wakeLock, clock);
+        session = new RideSessionService(routes, rides, location, wakeLock, settings, clock);
         Services.AddSingleton<IRouteRepository>(routes);
         Services.AddSingleton<IRideRepository>(rides);
+        Services.AddSingleton<ISettingsRepository>(settings);
         Services.AddSingleton(session);
     }
 

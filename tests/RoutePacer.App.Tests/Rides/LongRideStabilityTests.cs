@@ -18,11 +18,12 @@ public sealed class LongRideStabilityTests
         var rides = new InMemoryRideRepository();
         var location = new FakeLocationService();
         var wakeLock = new FakeWakeLockService();
+        var settings = new InMemorySettingsRepository();
         var clock = new FakeTimeProvider(Start);
         var track = TrackFixtures.Straight(points: 4_000, metresPerSecond: 10);
         await routes.SaveAsync(track);
 
-        var session = new RideSessionService(routes, rides, location, wakeLock, clock);
+        var session = new RideSessionService(routes, rides, location, wakeLock, settings, clock);
         await session.StartAsync();
 
         var published = 0;
@@ -55,11 +56,12 @@ public sealed class LongRideStabilityTests
         var routes = new InMemoryRouteRepository();
         var rides = new InMemoryRideRepository();
         var location = new FakeLocationService();
+        var settings = new InMemorySettingsRepository();
         var clock = new FakeTimeProvider(Start);
         var track = TrackFixtures.Straight(points: 200, metresPerSecond: 10);
         await routes.SaveAsync(track);
 
-        var session = new RideSessionService(routes, rides, location, new FakeWakeLockService(), clock);
+        var session = new RideSessionService(routes, rides, location, new FakeWakeLockService(), settings, clock);
         await session.StartAsync();
 
         var published = 0;

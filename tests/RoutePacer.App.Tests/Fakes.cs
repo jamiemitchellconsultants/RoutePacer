@@ -95,6 +95,15 @@ public sealed class InMemorySettingsRepository : ISettingsRepository
     }
 }
 
+public sealed class ThrowingSettingsRepository : ISettingsRepository
+{
+    public Task<AutoPauseSettings> GetAutoPauseAsync(CancellationToken cancellationToken = default)
+        => throw new InvalidOperationException("storage unavailable");
+
+    public Task SaveAutoPauseAsync(AutoPauseSettings settings, CancellationToken cancellationToken = default)
+        => throw new InvalidOperationException("storage unavailable");
+}
+
 public sealed class FakeLocationService : ILocationService
 {
     public int StartCount { get; private set; }
