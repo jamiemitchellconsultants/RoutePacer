@@ -13,4 +13,6 @@ public sealed record TrackerSnapshot(
     long SavedPointCount,
     double? AccuracyMeters,
     WakeLockStatus WakeStatus,
-    string? Error = null);
+    string? Error = null,
+    PauseMode PauseMode = PauseMode.None,
+    TimeSpan PausedFor = default);

@@ -135,18 +135,100 @@ public sealed class RideSessionServiceTests
     }
 
     [Fact]
-    public async Task Pause_stops_the_watch_and_resume_restarts_it()
+    public async Task A_manual_pause_keeps_the_gps_watch_up_because_movement_is_what_ends_it()
     {
         var session = await Started();
 
         await session.PauseAsync();
-        location.Watching.Should().BeFalse();
-        wakeLock.ReleaseCount.Should().Be(1);
+
+        session.State.Should().Be(RideSessionState.Paused);
+        session.PauseMode.Should().Be(PauseMode.Manual);
+        location.Watching.Should().BeTrue();
+        wakeLock.ReleaseCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Riding_off_ends_a_manual_pause_without_a_tap()
+    {
+        var session = await Started();
+        await location.PushAsync(Fix(10, 0));
+        await session.PauseAsync();
+
+        // 0.00015 deg is 16.7 m, past the 15 m resume radius.
+        await location.PushAsync(Fix(70, 0.00015));
+
+        session.State.Should().Be(RideSessionState.Running);
+        session.PauseMode.Should().Be(PauseMode.None);
+    }
+
+    [Fact]
+    public async Task Drifting_inside_the_resume_radius_does_not_end_a_pause()
+    {
+        var session = await Started();
+        await location.PushAsync(Fix(10, 0));
+        await session.PauseAsync();
+
+        // 0.00011 deg is 12.2 m: past the stationary radius, short of the resume radius.
+        await location.PushAsync(Fix(40, 0.00011));
+        await location.PushAsync(Fix(70, -0.00011));
+
+        session.State.Should().Be(RideSessionState.Paused);
+    }
+
+    [Fact]
+    public async Task A_paused_ride_records_no_points_and_accumulates_no_distance()
+    {
+        var session = await Started();
+        await location.PushAsync(Fix(10, 0));
+        var pointsAtPause = rides.Points.Count;
+        var distanceAtPause = session.Snapshot!.DistanceMeters;
+        await session.PauseAsync();
+
+        for (var i = 1; i <= 5; i++) await location.PushAsync(Fix(10 + i * 10, i % 2 == 0 ? 0.00005 : -0.00005));
+
+        rides.Points.Should().HaveCount(pointsAtPause);
+        session.Snapshot!.DistanceMeters.Should().Be(distanceAtPause);
+    }
+
+    [Fact]
+    public async Task Tapping_resume_ends_a_manual_pause_without_restarting_a_watch_that_never_stopped()
+    {
+        var session = await Started();
+        await session.PauseAsync();
 
         await session.ResumeAsync();
-        location.Watching.Should().BeTrue();
-        location.StartCount.Should().Be(2);
+
         session.State.Should().Be(RideSessionState.Running);
+        session.PauseMode.Should().Be(PauseMode.None);
+        location.StartCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task The_snapshot_carries_the_pause_kind_and_how_long_it_has_run()
+    {
+        var session = await Started();
+        await location.PushAsync(Fix(10, 0));
+        await session.PauseAsync();
+
+        clock.Advance(TimeSpan.FromSeconds(20));
+        await location.PushAsync(Fix(30, 0.00005));
+
+        session.Snapshot!.PauseMode.Should().Be(PauseMode.Manual);
+        session.Snapshot!.PausedFor.Should().BeCloseTo(TimeSpan.FromSeconds(20), TimeSpan.FromSeconds(1));
+    }
+
+    [Fact]
+    public async Task A_recovered_ride_comes_back_suspended_with_no_watch()
+    {
+        await routes.SaveAsync(track);
+        rides.SeedActive(new RideSummary(Guid.NewGuid(), track.Summary.RouteId, Start, null, RideStatus.Running, 500, 300, 0));
+        var session = Create();
+
+        await session.RestoreActiveRideAsync();
+
+        session.State.Should().Be(RideSessionState.Paused);
+        session.PauseMode.Should().Be(PauseMode.Suspended);
+        location.Watching.Should().BeFalse();
     }
 
     [Fact]
