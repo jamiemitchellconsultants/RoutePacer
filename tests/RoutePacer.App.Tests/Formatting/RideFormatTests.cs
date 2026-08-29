@@ -136,6 +136,7 @@ public sealed class RideFormatTests
             route,
             new MatchedPosition(4, 500, 2, 0.5),
             start,
+            TimeSpan.Zero,
             new GeoFix(start.AddSeconds(secondsFromStart), 0, 0, 5, null));
 
         RideFormat.TimeDelta(snapshot.DeltaTimeSeconds).Should().Contain(expected);

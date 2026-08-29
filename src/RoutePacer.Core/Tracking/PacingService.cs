@@ -6,9 +6,13 @@ public sealed class PacingService
 {
     public static double DeltaTime(double liveSeconds, double targetSeconds) => liveSeconds - targetSeconds;
 
-    public PacingSnapshot Calculate(RouteTrack route, MatchedPosition match, DateTimeOffset sessionStartedAtUtc, GeoFix fix)
+    /// <summary>
+    /// <paramref name="pausedTotal"/> is required rather than defaulted. Live elapsed drives every
+    /// delta the rider reads, so a caller that forgets to subtract a pause must not compile.
+    /// </summary>
+    public PacingSnapshot Calculate(RouteTrack route, MatchedPosition match, DateTimeOffset sessionStartedAtUtc, TimeSpan pausedTotal, GeoFix fix)
     {
-        var live = TimeSpan.FromSeconds(Math.Max(0, (fix.TimestampUtc - sessionStartedAtUtc).TotalSeconds));
+        var live = TimeSpan.FromSeconds(Math.Max(0, (fix.TimestampUtc - sessionStartedAtUtc - pausedTotal).TotalSeconds));
         if (!route.HasTiming) return new PacingSnapshot(fix.TimestampUtc, live, match, null, null, null, null, fix.SpeedMps);
         var target = TrackInterpolator.ElapsedAtDistance(route, match.RouteDistanceMeters);
         var expected = TrackInterpolator.DistanceAtElapsed(route, live.TotalSeconds);

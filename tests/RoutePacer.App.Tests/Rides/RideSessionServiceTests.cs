@@ -303,4 +303,20 @@ public sealed class RideSessionServiceTests
 
         session.State.Should().Be(RideSessionState.Idle);
     }
+
+    [Fact]
+    public async Task A_pause_freezes_the_ahead_behind_reading_and_not_only_the_elapsed_clock()
+    {
+        var session = await Started();
+        clock.Advance(TimeSpan.FromSeconds(60));
+        await location.PushAsync(Fix(60, 0.005));
+        var before = session.Snapshot!.Pacing!.DeltaTimeSeconds;
+
+        await session.PauseAsync();
+        clock.Advance(TimeSpan.FromMinutes(5));
+        await session.ResumeAsync();
+        await location.PushAsync(Fix(360, 0.005));
+
+        session.Snapshot!.Pacing!.DeltaTimeSeconds.Should().BeApproximately(before!.Value, 1);
+    }
 }
