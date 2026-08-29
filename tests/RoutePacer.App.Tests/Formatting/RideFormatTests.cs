@@ -8,7 +8,7 @@ public sealed class RideFormatTests
 {
     [Theory]
     [InlineData(-123, "2:03 ahead")]
-    [InlineData(45, "0:45 behind")]
+    [InlineData(45, "behind 0:45")]
     [InlineData(0, "On pace")]
     [InlineData(0.4, "On pace")]
     [InlineData(-0.4, "On pace")]
@@ -21,7 +21,7 @@ public sealed class RideFormatTests
 
     [Theory]
     [InlineData(-120, "120 m ahead")]
-    [InlineData(85, "85 m behind")]
+    [InlineData(85, "behind 85 m")]
     [InlineData(0, "0 m")]
     public void Distance_delta_is_signed_and_labelled(double metres, string expected)
         => RideFormat.Delta(metres, "m").Should().Be(expected);
@@ -88,4 +88,24 @@ public sealed class RideFormatTests
     [InlineData(WakeLockStatus.Unsupported, "Screen wake lock unavailable")]
     public void Wake_status_is_described_in_words(WakeLockStatus status, string expected)
         => RideFormat.Wake(status).Should().Be(expected);
+
+    // The tracker carries no red or green, so this placement is the only thing telling a rider
+    // which side of the plan they are on. If both ever read the same way round, the screen stops
+    // distinguishing ahead from behind at all.
+    [Fact]
+    public void Ahead_trails_the_number_and_behind_leads_it()
+    {
+        RideFormat.TimeDelta(-123).Should().EndWith("ahead");
+        RideFormat.TimeDelta(45).Should().StartWith("behind");
+        RideFormat.Delta(-120, "m").Should().EndWith("ahead");
+        RideFormat.Delta(85, "m").Should().StartWith("behind");
+    }
+
+    [Fact]
+    public void Neither_reading_leans_on_a_sign_character()
+    {
+        // A minus sign is easy to miss at a glance and is not what the rider is being asked to read.
+        RideFormat.TimeDelta(-123).Should().NotContain("-");
+        RideFormat.Delta(-120, "m").Should().NotContain("-");
+    }
 }
